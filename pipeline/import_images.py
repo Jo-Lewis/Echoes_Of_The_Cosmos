@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""把源目录里的配图拷进库，按 01.jpg 顺序命名，并写回 meta.assets.images。
+r"""把源目录里的配图拷进库，按 01.jpg 顺序命名，并写回 meta.assets.images。
 
 - 源目录：meta.source.doc 所在的文件夹（含子文件夹，如「鲁迅插图/01/」）
 - 长路径：Windows 260 字符限制，统一用 \\?\ 前缀
@@ -20,7 +20,7 @@ LONG = "\\\\?\\"
 
 
 def lp(p):
-    """给绝对路径加 \\?\ 前缀，绕开 MAX_PATH。"""
+    r"""给绝对路径加 \\?\ 前缀，绕开 MAX_PATH。"""
     if p.startswith(LONG):
         return p
     return LONG + os.path.abspath(p)
