@@ -103,11 +103,10 @@ class PlayerBox(private val ctx: Context) {
     }
 
     fun applyGain(ep: Episode) {
-        val c = controller ?: return
-        // Media3 的 setVolume 只接受 0..1，超过就抛 IllegalArgumentException。
-        // 增益为正（录音偏轻的期）时只能停在 1.0，做不到放大——要放大得走 AudioProcessor。
+        // Media3 的 setVolume 只接受 0..1，正增益也只能停在 1.0。
+        // 统一交给 Volume，避免覆盖掉情景/定时模式的淡出。
         val v = Math.pow(10.0, ep.gainDb.toDouble() / 20.0).toFloat()
-        c.volume = v.coerceIn(0.0f, 1.0f)
+        Volume.setGain(controller, v)
     }
 
     fun hasQueue(): Boolean = (controller?.mediaItemCount ?: 0) > 0

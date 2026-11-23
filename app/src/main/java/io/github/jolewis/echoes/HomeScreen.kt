@@ -30,6 +30,7 @@ fun HomeScreen(
     onPlay: (Episode) -> Unit,
     onDetail: (Episode) -> Unit,
     onSearch: (String) -> Unit,
+    onScene: (Scene) -> Unit,
     onOpenPlayer: () -> Unit,
     onGoLibrary: (String) -> Unit,
 ) {
@@ -114,6 +115,12 @@ fun HomeScreen(
                     color = Tokens.Muted, fontSize = 10.sp
                 )
             }
+        }
+
+        // 情景模式：一键按此刻状态听
+        item {
+            SectionTitle("现在是什么状态")
+            SceneRow { onScene(it) }
         }
 
         // 继续收听
