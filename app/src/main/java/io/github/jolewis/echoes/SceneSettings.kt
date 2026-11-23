@@ -19,7 +19,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.util.Calendar
 
 /** 情景模式列表：内置 + 自定义，点进去改偏好。 */
 @Composable
@@ -82,16 +81,13 @@ fun SceneListPage(
 fun SceneEditPage(
     initial: ScenePrefs,
     isNew: Boolean,
+    years: IntRange,
     onBack: () -> Unit,
     onSave: (ScenePrefs) -> Unit,
     onDelete: () -> Unit,
     onReset: () -> Unit,
 ) {
     var p by remember(initial.id) { mutableStateOf(initial) }
-    val year = Calendar.getInstance().get(Calendar.YEAR)
-    val yearOptions = listOf(0 to "不限", (year - 2) to "近 3 年", (year - 4) to "近 5 年", (year - 8) to "近 8 年")
-    val lenOptions = listOf(5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 45, 60)
-    val totalOptions = listOf(15, 20, 25, 30, 40, 45, 60)
 
     SubPage(if (isNew) "新建模式" else "编辑 · ${initial.name}", onBack) {
         Column(
@@ -110,20 +106,51 @@ fun SceneEditPage(
                 )
             }
 
-            ChipSection("单篇时长下限", lenOptions.map { "$it 分" }, lenOptions.indexOf(p.perMin)) { i ->
-                val v = lenOptions[i]
-                p = p.copy(perMin = v, perMax = maxOf(v, p.perMax))
+            Spacer(Modifier.height(16.dp))
+            RangeRow(
+                label = "单篇时长",
+                lo = 5f, hi = 60f, step = 1,
+                value = p.perMin.toFloat()..p.perMax.toFloat(),
+                fmt = { "${it} 分钟" }
+            ) { r ->
+                p = p.copy(perMin = r.start.toInt(), perMax = r.endInclusive.toInt())
             }
-            ChipSection("单篇时长上限", lenOptions.map { "$it 分" }, lenOptions.indexOf(p.perMax)) { i ->
-                val v = lenOptions[i]
-                p = p.copy(perMax = v, perMin = minOf(v, p.perMin))
+
+            Spacer(Modifier.height(14.dp))
+            SingleSlider(
+                label = "一段大概多长",
+                lo = 10f, hi = 120f, step = 5,
+                value = p.totalMin.toFloat(),
+                fmt = { "约 $it 分钟" }
+            ) { v -> p = p.copy(totalMin = v.toInt()) }
+
+            Spacer(Modifier.height(14.dp))
+            // 年份：拉满 = 不限；yearMax=0 表示"到最新"
+            val yLo = if (p.yearMin == 0) years.first else p.yearMin.coerceAtLeast(years.first)
+            val yHi = if (p.yearMax == 0) years.last else p.yearMax.coerceAtMost(years.last)
+            Spacer(Modifier.height(14.dp))
+            RangeRow(
+                label = "听哪几年的",
+                lo = years.first.toFloat(),
+                hi = years.last.toFloat(),
+                step = 0,
+                value = yLo.toFloat()..yHi.toFloat(),
+                fmt = { "$it" }
+            ) { r ->
+                val a = r.start.toInt()
+                val b = r.endInclusive.toInt()
+                p = if (a <= years.first && b >= years.last) p.copy(yearMin = 0, yearMax = 0)
+                else p.copy(yearMin = a, yearMax = b)
             }
-            ChipSection("一段大概多长", totalOptions.map { "$it 分钟" }, totalOptions.indexOf(p.totalMin)) { i ->
-                p = p.copy(totalMin = totalOptions[i])
-            }
-            ChipSection("听哪几年的", yearOptions.map { it.second }, yearOptions.indexOfFirst { it.first == p.yearMin }) { i ->
-                p = p.copy(yearMin = yearOptions[i].first)
-            }
+            Text(
+                when {
+                    p.yearMin == 0 && p.yearMax == 0 -> "不限年份"
+                    p.yearMin > 0 && p.yearMax == 0 -> "${p.yearMin} 年之后"
+                    else -> "${p.yearMin} - ${p.yearMax} 年"
+                },
+                color = Tokens.Primary, fontSize = 10.sp,
+                modifier = Modifier.padding(start = 2.dp, top = 2.dp)
+            )
 
             MultiChips("风格（可多选，不选=不限）", Scenes.tones, p.tones) { t ->
                 p = p.copy(tones = if (t in p.tones) p.tones - t else p.tones + t)
@@ -175,6 +202,59 @@ fun SceneEditPage(
             Spacer(Modifier.height(30.dp))
         }
     }
+}
+
+@Composable
+private fun RangeRow(
+    label: String,
+    lo: Float,
+    hi: Float,
+    step: Int,
+    value: ClosedFloatingPointRange<Float>,
+    fmt: (Int) -> String,
+    onChange: (ClosedFloatingPointRange<Float>) -> Unit,
+) {
+    Text(label, color = Tokens.Muted, fontSize = 11.sp)
+    Text(
+        "${fmt(value.start.toInt())} - ${fmt(value.endInclusive.toInt())}",
+        color = Tokens.OnBg, fontSize = 13.sp, fontWeight = FontWeight.Medium
+    )
+    RangeSlider(
+        value = value,
+        onValueChange = onChange,
+        valueRange = lo..hi,
+        steps = if (step > 1) ((hi - lo).toInt() / step) - 1 else 0,
+        colors = SliderDefaults.colors(
+            thumbColor = Tokens.Primary,
+            activeTrackColor = Tokens.Primary,
+            inactiveTrackColor = Tokens.Elevated,
+        )
+    )
+}
+
+@Composable
+private fun SingleSlider(
+    label: String,
+    lo: Float,
+    hi: Float,
+    step: Int,
+    value: Float,
+    fmt: (Int) -> String,
+    onChange: (Float) -> Unit,
+) {
+    Text(label, color = Tokens.Muted, fontSize = 11.sp)
+    Text(fmt(value.toInt()), color = Tokens.OnBg, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    Slider(
+        value = value,
+        onValueChange = onChange,
+        valueRange = lo..hi,
+        steps = if (step > 1) ((hi - lo).toInt() / step) - 1 else 0,
+        colors = SliderDefaults.colors(
+            thumbColor = Tokens.Primary,
+            activeTrackColor = Tokens.Primary,
+            inactiveTrackColor = Tokens.Elevated,
+        )
+    )
 }
 
 @Composable

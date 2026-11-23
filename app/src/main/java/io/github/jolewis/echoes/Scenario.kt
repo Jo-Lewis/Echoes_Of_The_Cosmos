@@ -36,7 +36,8 @@ data class ScenePrefs(
     val perMin: Int = 8,          // 单篇时长下限（分钟）
     val perMax: Int = 25,         // 单篇时长上限
     val totalMin: Int = 20,       // 一段大概多长
-    val yearMin: Int = 0,         // 0 = 不限年份
+    val yearMin: Int = 0,         // 0 = 不限
+    val yearMax: Int = 0,         // 0 = 不限
     val tones: List<String> = emptyList(),
     val humorMin: Int = 0,
     val humorMax: Int = 5,
@@ -51,7 +52,7 @@ data class ScenePrefs(
     fun toJson(): JSONObject = JSONObject()
         .put("id", id).put("name", name).put("emoji", emoji)
         .put("perMin", perMin).put("perMax", perMax).put("totalMin", totalMin)
-        .put("yearMin", yearMin)
+        .put("yearMin", yearMin).put("yearMax", yearMax)
         .put("tones", JSONArray(tones))
         .put("humorMin", humorMin).put("humorMax", humorMax)
         .put("loadMax", loadMax).put("levelMax", levelMax)
@@ -73,6 +74,7 @@ data class ScenePrefs(
                 perMax = o.optInt("perMax", 25),
                 totalMin = o.optInt("totalMin", 20),
                 yearMin = o.optInt("yearMin", 0),
+                yearMax = o.optInt("yearMax", 0),
                 tones = list("tones"),
                 humorMin = o.optInt("humorMin", 0),
                 humorMax = o.optInt("humorMax", 5),
@@ -98,21 +100,51 @@ object Scenes {
 
     /** 内置预设。用户改过就以存储的为准。 */
     fun defaults(): List<ScenePrefs> = listOf(
-        ScenePrefs("sleep", "睡前", "🛌", 6, 20, 20, 0,
-            listOf("平静", "怀旧", "好奇"), 0, 4, 2, 3, emptyList(), true, 8, "auto"),
-        ScenePrefs("commute", "通勤", "🚇", 8, 25, 25, 0,
-            listOf("好奇", "震撼", "紧张"), 0, 5, 4, 2,
-            listOf("历史叙事", "人物传记", "时事评论"), false, 0, "auto"),
-        ScenePrefs("chores", "家务", "🧹", 6, 20, 20, 0,
-            listOf("轻松", "好奇"), 4, 5, 3, 3, emptyList(), false, 0, "auto"),
-        ScenePrefs("focus", "专注", "🎧", 10, 40, 40, 0,
-            listOf("平静", "好奇"), 0, 4, 3, 3,
-            listOf("杂谈漫聊", "科普讲解"), false, 0, "many"),
-        ScenePrefs("workout", "运动", "🏃", 6, 25, 20, 0,
-            listOf("热血", "紧张", "震撼"), 0, 5, 5, 5, emptyList(), false, 0, "auto"),
-        ScenePrefs("drink", "小酌", "🍷", 12, 45, 30, 0,
-            listOf("怀旧", "平静", "沉痛"), 0, 4, 4, 4,
-            listOf("杂谈漫聊", "历史叙事", "人物传记"), false, 0, "auto"),
+        ScenePrefs(
+            id = "sleep", name = "睡前", emoji = "🛌",
+            perMin = 6, perMax = 20, totalMin = 20,
+            tones = listOf("平静", "怀旧", "好奇"),
+            humorMin = 0, humorMax = 4, loadMax = 2, levelMax = 3,
+            sleepOnly = true, fadeMin = 8, countMode = "auto"
+        ),
+        ScenePrefs(
+            id = "commute", name = "通勤", emoji = "🚇",
+            perMin = 8, perMax = 25, totalMin = 25,
+            tones = listOf("好奇", "震撼", "紧张"),
+            humorMin = 0, humorMax = 5, loadMax = 4, levelMax = 2,
+            contentTypes = listOf("历史叙事", "人物传记", "时事评论"),
+            fadeMin = 0, countMode = "auto"
+        ),
+        ScenePrefs(
+            id = "chores", name = "家务", emoji = "🧹",
+            perMin = 6, perMax = 20, totalMin = 20,
+            tones = listOf("轻松", "好奇"),
+            humorMin = 4, humorMax = 5, loadMax = 3, levelMax = 3,
+            fadeMin = 0, countMode = "auto"
+        ),
+        ScenePrefs(
+            id = "focus", name = "专注", emoji = "🎧",
+            perMin = 10, perMax = 40, totalMin = 40,
+            tones = listOf("平静", "好奇"),
+            humorMin = 0, humorMax = 4, loadMax = 3, levelMax = 3,
+            contentTypes = listOf("杂谈漫聊", "科普讲解"),
+            fadeMin = 0, countMode = "many"
+        ),
+        ScenePrefs(
+            id = "workout", name = "运动", emoji = "🏃",
+            perMin = 6, perMax = 25, totalMin = 20,
+            tones = listOf("热血", "紧张", "震撼"),
+            humorMin = 0, humorMax = 5, loadMax = 5, levelMax = 5,
+            fadeMin = 0, countMode = "auto"
+        ),
+        ScenePrefs(
+            id = "drink", name = "小酌", emoji = "🍷",
+            perMin = 12, perMax = 45, totalMin = 30,
+            tones = listOf("怀旧", "平静", "沉痛"),
+            humorMin = 0, humorMax = 4, loadMax = 4, levelMax = 4,
+            contentTypes = listOf("杂谈漫聊", "历史叙事", "人物传记"),
+            fadeMin = 0, countMode = "auto"
+        ),
     )
 
     // ---------------- 读写 ----------------
@@ -162,12 +194,13 @@ object Scenes {
      * 先打分取前 40，再随机洗牌，并排除上一次用过的那批。
      */
     fun pick(ctx: Context, p: ScenePrefs, eps: List<Episode>): List<Episode> {
-        val yearFloor = if (p.yearMin > 0) p.yearMin else 0
+        val yearFloor = p.yearMin
+        val yearCeil = if (p.yearMax > 0) p.yearMax else 9999
         val recent = lastPicked(ctx, p.id)
 
         val pool = eps.asSequence()
             .filter { it.durationSec in (p.perMin * 60)..(p.perMax * 60) }
-            .filter { yearFloor == 0 || it.year >= yearFloor }
+            .filter { it.year >= yearFloor && it.year <= yearCeil }
             .filter { it.level <= p.levelMax }
             .filter { it.load <= p.loadMax }
             .filter { it.humor in p.humorMin..p.humorMax }
@@ -232,7 +265,7 @@ object Scenes {
         if (p.tones.isNotEmpty() && e.tone in p.tones) s += 4
         if (e.contentType in p.contentTypes) s += 3
         if (p.sleepOnly && e.sleepFriendly) s += 6
-        if (p.yearMin > 0 && e.year >= p.yearMin) s += 2
+        if (p.yearMin > 0 && e.year in p.yearMin..(if (p.yearMax > 0) p.yearMax else 9999)) s += 2
         if (e.humor >= 4) s += 1
         return s
     }
@@ -255,7 +288,11 @@ object Scenes {
         val parts = ArrayList<String>()
         parts.add("${p.perMin}-${p.perMax} 分钟/期")
         parts.add("约 ${p.totalMin} 分钟")
-        if (p.yearMin > 0) parts.add("${p.yearMin} 年后")
+        if (p.yearMin > 0 || p.yearMax > 0) {
+            parts.add(
+                if (p.yearMax > 0) "${p.yearMin}-${p.yearMax} 年" else "${p.yearMin} 年后"
+            )
+        }
         if (p.fadeMin > 0) parts.add("末 ${p.fadeMin} 分钟淡出")
         return parts.joinToString(" · ")
     }

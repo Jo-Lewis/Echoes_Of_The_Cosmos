@@ -32,8 +32,13 @@ class PlayerBox(private val ctx: Context) {
         }, ContextCompat.getMainExecutor(ctx))
     }
 
+    private var released = false
+
+    /** 只能释放一次：重复 release 会抛 Service not registered。 */
     fun release() {
-        future?.let { MediaController.releaseFuture(it) }
+        if (released) return
+        released = true
+        runCatching { future?.let { MediaController.releaseFuture(it) } }
         future = null
         controller = null
     }

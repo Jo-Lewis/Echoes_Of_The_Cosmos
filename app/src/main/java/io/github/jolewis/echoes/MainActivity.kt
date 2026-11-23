@@ -147,9 +147,12 @@ fun EchoesApp(activity: ComponentActivity) {
         }
     }
 
-    // 退出/切后台时落盘
+    // 退出/切后台时落盘，并释放播放器连接（否则 Media3 会在退出时重复 unbind 崩溃）
     DisposableEffect(Unit) {
-        onDispose { Profile.dump(activity) }
+        onDispose {
+            Profile.dump(activity)
+            runCatching { box.release() }
+        }
     }
 
     LaunchedEffect(tab) {
@@ -187,10 +190,14 @@ fun EchoesApp(activity: ComponentActivity) {
         }
     }
 
-    BackHandler(enabled = playerOpen || detail != null || minePage != null || searchQuery != null || tab != 0) {
+    BackHandler(
+        enabled = playerOpen || detail != null || sceneEdit != null ||
+            minePage != null || searchQuery != null || tab != 0
+    ) {
         when {
             playerOpen -> playerOpen = false
             detail != null -> detail = null
+            sceneEdit != null -> sceneEdit = null        // 编辑页 → 回到模式列表
             minePage != null -> minePage = null
             searchQuery != null -> searchQuery = null
             else -> tab = 0
@@ -367,6 +374,10 @@ fun EchoesApp(activity: ComponentActivity) {
         SceneEditPage(
             initial = sc,
             isNew = sceneIsNew,
+            years = run {
+                val ys = episodes.map { it.year }.filter { it in 1990..2100 }
+                if (ys.isEmpty()) 2016..2026 else ys.min()..ys.max()
+            },
             onBack = { sceneEdit = null },
             onSave = { updated ->
                 Scenes.upsert(activity, updated)
