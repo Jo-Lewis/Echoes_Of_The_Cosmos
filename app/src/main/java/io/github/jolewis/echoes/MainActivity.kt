@@ -67,6 +67,7 @@ fun EchoesApp(activity: ComponentActivity) {
     var llmCfg by remember { mutableStateOf(LlmConfig.load(activity)) }
     val searchState = remember { SearchState() }
     var lastDump by remember { mutableStateOf(0L) }
+    val queue = remember { QueueState.load(activity) }
     var favs by remember { mutableStateOf(prefs.getStringSet("favs", emptySet())!!.toSet()) }
 
     LaunchedEffect(Unit) {
@@ -168,11 +169,51 @@ fun EchoesApp(activity: ComponentActivity) {
         }
     }
 
-    val startPlay: (Episode) -> Unit = { ep ->
-        current = ep
-        prefs.edit().putString("last", ep.id).apply()
-        box.connect { ensureLoaded(ep); playerOpen = true }
+    // 播放队列里第 i 项
+    val playAt: (Int) -> Unit = { i ->
+        val ep = queue.ids.getOrNull(i)?.let { id -> episodes.firstOrNull { it.id == id } }
+        if (ep != null) {
+            queue.index = i
+            QueueState.save(activity, queue)
+            current = ep
+            prefs.edit().putString("last", ep.id).apply()
+            box.connect { ensureLoaded(ep); playerOpen = true }
+        }
     }
+
+    // 用一批节目替换队列并从第 0 项开始播
+    val playAll: (List<Episode>) -> Unit = { list ->
+        if (list.isNotEmpty()) {
+            queue.replace(list.map { it.id }, 0)
+            QueueState.save(activity, queue)
+            playAt(0)
+        }
+    }
+
+    // 单集播放：已在队列里就跳过去，否则用它替换队列
+    val startPlay: (Episode) -> Unit = { ep ->
+        val i = queue.ids.indexOf(ep.id)
+        if (i >= 0) playAt(i)
+        else { queue.replace(listOf(ep.id), 0); QueueState.save(activity, queue); playAt(0) }
+    }
+
+    // 下一期
+    val playNext: () -> Unit = {
+        if (queue.hasNext()) playAt(queue.index + 1)
+    }
+
+    // 一期播完 → 自动下一期
+    val onEnded by rememberUpdatedState(playNext)
+    DisposableEffect(box.controller) {
+        val l = object : androidx.media3.common.Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == androidx.media3.common.Player.STATE_ENDED) onEnded()
+            }
+        }
+        box.addListener(l)
+        onDispose { box.removeListener(l) }
+    }
+
 
     if (loading) {
         Box(Modifier.fillMaxSize().background(Tokens.Bg), contentAlignment = Alignment.Center) {
@@ -194,7 +235,7 @@ fun EchoesApp(activity: ComponentActivity) {
             onSeek = { box.controller?.seekTo(it) },
             onBack = { playerOpen = false },
             onReader = { },
-            onNext = { episodes.randomOrNull()?.let { startPlay(it) } },
+            onNext = playNext,
         )
         return
     }
@@ -211,6 +252,7 @@ fun EchoesApp(activity: ComponentActivity) {
                 prefs.edit().putStringSet("favs", favs).apply()
             },
             onOpen = { detail = it },
+            onEnqueue = { queue.enqueue(it.id); QueueState.save(activity, queue) },
         )
         return
     }
@@ -223,6 +265,7 @@ fun EchoesApp(activity: ComponentActivity) {
             cfg = llmCfg,
             onBack = { searchQuery = null },
             onPlay = { startPlay(it) },
+            onPlayQueue = { list -> playAll(list) },
             onDetail = { detail = it },
             onOpenSettings = { searchQuery = null; tab = 2; minePage = "ai" },
         )
@@ -241,6 +284,13 @@ fun EchoesApp(activity: ComponentActivity) {
             "library" -> LibraryPage(episodes) { minePage = null }
             "about" -> AboutPage { minePage = null }
             "ai" -> AiSettingsPage(llmCfg, { c -> c.save(activity); llmCfg = c }) { minePage = null }
+            "queue" -> QueuePage(
+                episodes, queue,
+                onBack = { minePage = null },
+                onPlayAt = { playAt(it); minePage = null },
+                onRemove = { i -> queue.removeAt(i); QueueState.save(activity, queue) },
+                onClear = { queue.clear(); QueueState.save(activity, queue) },
+            )
         }
         return
     }
@@ -278,6 +328,7 @@ fun EchoesApp(activity: ComponentActivity) {
                 )
                 else -> MineScreen(
                     episodes, recs, favs, sleepMin, llmCfg.ready,
+                    queueCount = queue.ids.size,
                     onOpenPage = { minePage = it },
                 )
             }

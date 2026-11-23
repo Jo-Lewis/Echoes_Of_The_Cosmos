@@ -35,6 +35,7 @@ fun EpisodeDetailScreen(
     onPlay: () -> Unit,
     onToggleFavorite: () -> Unit,
     onOpen: (Episode) -> Unit,
+    onEnqueue: (Episode) -> Unit = {},
 ) {
     val paragraphs = remember(ep.id) { previewParagraphs(ep, 3) }
     val related = remember(ep.id, all) { relatedTo(ep, all, 4) }
@@ -110,6 +111,17 @@ fun EpisodeDetailScreen(
                             color = Tokens.Bg, fontSize = 14.sp, fontWeight = FontWeight.Bold
                         )
                     }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { onEnqueue(ep) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Filled.QueueMusic, null, tint = Tokens.Primary,
+                        modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("加入队列", color = Tokens.Primary, fontSize = 13.sp)
                 }
                 Spacer(Modifier.height(10.dp))
                 Completeness(ep)

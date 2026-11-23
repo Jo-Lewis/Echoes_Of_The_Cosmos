@@ -57,6 +57,7 @@ fun SearchScreen(
     cfg: LlmConfig,
     onBack: () -> Unit,
     onPlay: (Episode) -> Unit,
+    onPlayQueue: (List<Episode>) -> Unit,
     onDetail: (Episode) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -220,7 +221,7 @@ fun SearchScreen(
                         Spacer(Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Button(
-                                onClick = { onPlay(r.pick) },
+                                onClick = { onPlayQueue(listOf(r.pick) + r.queue) },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Tokens.Primary)
