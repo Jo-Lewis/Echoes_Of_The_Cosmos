@@ -29,7 +29,6 @@ fun MineScreen(
     favs: Set<String>,
     sleepMin: Int,
     aiReady: Boolean,
-    queueCount: Int,
     onOpenPage: (String) -> Unit,
 ) {
     val todaySec = ListenLog.todaySec(recs)
@@ -64,8 +63,6 @@ fun MineScreen(
                 MenuRow(Icons.Filled.BarChart, "收听统计", "时长、时段、偏好、完播率") { onOpenPage("stats") }
                 MenuRow(Icons.Filled.Favorite, "我的收藏", "${favs.size} 期") { onOpenPage("favs") }
                 MenuRow(Icons.Filled.History, "收听历史", "最近听过") { onOpenPage("history") }
-                MenuRow(Icons.Filled.QueueMusic, "播放队列",
-                    if (queueCount == 0) "空" else "$queueCount 期待播") { onOpenPage("queue") }
             }
         }
 

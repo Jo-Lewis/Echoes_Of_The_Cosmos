@@ -68,6 +68,7 @@ fun EchoesApp(activity: ComponentActivity) {
     val searchState = remember { SearchState() }
     var lastDump by remember { mutableStateOf(0L) }
     val queue = remember { QueueState.load(activity) }
+    var queueSheet by remember { mutableStateOf(false) }
     var favs by remember { mutableStateOf(prefs.getStringSet("favs", emptySet())!!.toSet()) }
 
     LaunchedEffect(Unit) {
@@ -197,9 +198,12 @@ fun EchoesApp(activity: ComponentActivity) {
         else { queue.replace(listOf(ep.id), 0); QueueState.save(activity, queue); playAt(0) }
     }
 
-    // 下一期
+    // 下一期 / 上一期
     val playNext: () -> Unit = {
         if (queue.hasNext()) playAt(queue.index + 1)
+    }
+    val playPrev: () -> Unit = {
+        if (queue.index > 0) playAt(queue.index - 1)
     }
 
     // 一期播完 → 自动下一期
@@ -234,9 +238,20 @@ fun EchoesApp(activity: ComponentActivity) {
             onToggle = togglePlay,
             onSeek = { box.controller?.seekTo(it) },
             onBack = { playerOpen = false },
-            onReader = { },
+            onQueue = { queueSheet = true },
+            onPrev = playPrev,
             onNext = playNext,
         )
+        if (queueSheet) {
+            QueueSheet(
+                episodes = episodes,
+                qs = queue,
+                onDismiss = { queueSheet = false },
+                onPlayAt = { i -> playAt(i); queueSheet = false },
+                onRemove = { i -> queue.removeAt(i); QueueState.save(activity, queue) },
+                onClear = { queue.clear(); QueueState.save(activity, queue) },
+            )
+        }
         return
     }
 
@@ -284,13 +299,6 @@ fun EchoesApp(activity: ComponentActivity) {
             "library" -> LibraryPage(episodes) { minePage = null }
             "about" -> AboutPage { minePage = null }
             "ai" -> AiSettingsPage(llmCfg, { c -> c.save(activity); llmCfg = c }) { minePage = null }
-            "queue" -> QueuePage(
-                episodes, queue,
-                onBack = { minePage = null },
-                onPlayAt = { playAt(it); minePage = null },
-                onRemove = { i -> queue.removeAt(i); QueueState.save(activity, queue) },
-                onClear = { queue.clear(); QueueState.save(activity, queue) },
-            )
         }
         return
     }
@@ -328,7 +336,6 @@ fun EchoesApp(activity: ComponentActivity) {
                 )
                 else -> MineScreen(
                     episodes, recs, favs, sleepMin, llmCfg.ready,
-                    queueCount = queue.ids.size,
                     onOpenPage = { minePage = it },
                 )
             }

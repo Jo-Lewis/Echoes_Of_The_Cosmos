@@ -73,7 +73,8 @@ fun PlayerScreen(
     onToggle: () -> Unit,
     onSeek: (Long) -> Unit,
     onBack: () -> Unit,
-    onReader: () -> Unit,
+    onQueue: () -> Unit,
+    onPrev: () -> Unit,
     onNext: () -> Unit,
 ) {
     if (ep == null) {
@@ -102,8 +103,8 @@ fun PlayerScreen(
                 scope.launch { modePager.animateScrollToPage(m.ordinal) }
             }
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = onReader) {
-                Icon(Icons.Filled.Subject, null, tint = Dim2)
+            IconButton(onClick = onQueue) {
+                Icon(Icons.Filled.QueueMusic, null, tint = Color.White)
             }
         }
 
@@ -151,16 +152,22 @@ fun PlayerScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                IconButton(onClick = onPrev) {
+                    Icon(Icons.Filled.SkipPrevious, null, tint = Color.White)
+                }
                 IconButton(onClick = { onSeek((posMs - 15000).coerceAtLeast(0)) }) {
                     Icon(Icons.Filled.Replay, null, tint = Color.White)
                 }
                 FilledIconButton(
                     onClick = onToggle,
-                    modifier = Modifier.size(60.dp),
+                    modifier = Modifier.size(58.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = Accent2)
                 ) {
                     Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null,
-                        tint = Color.White, modifier = Modifier.size(30.dp))
+                        tint = Color.White, modifier = Modifier.size(28.dp))
+                }
+                IconButton(onClick = { onSeek((posMs + 30000).coerceAtLeast(0)) }) {
+                    Icon(Icons.Filled.Forward30, null, tint = Color.White)
                 }
                 IconButton(onClick = onNext) {
                     Icon(Icons.Filled.SkipNext, null, tint = Color.White)
@@ -242,9 +249,15 @@ private fun ImagePane(ep: Episode, playing: Boolean, onOpen: (Int) -> Unit) {
     LaunchedEffect(auto, playing, ep.id) {
         if (!auto || !playing) return@LaunchedEffect
         while (true) {
-            delay(4000)
+            delay(7000)
             val next = (pager.currentPage + 1) % ep.images.size
-            pager.animateScrollToPage(next)
+            pager.animateScrollToPage(
+                next,
+                animationSpec = androidx.compose.animation.core.tween(
+                    650,
+                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                )
+            )
         }
     }
 
@@ -257,7 +270,10 @@ private fun ImagePane(ep: Episode, playing: Boolean, onOpen: (Int) -> Unit) {
                         .clickable { onOpen(page) }
                 ) {
                     AsyncImage(
-                        model = pic.file, contentDescription = pic.caption,
+                        model = coil.request.ImageRequest.Builder(
+                            androidx.compose.ui.platform.LocalContext.current
+                        ).data(pic.file).crossfade(280).build(),
+                        contentDescription = pic.caption,
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (pic.caption.isNotBlank()) {

@@ -77,68 +77,94 @@ class QueueState {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun QueuePage(
+fun QueueSheet(
     episodes: List<Episode>,
     qs: QueueState,
-    onBack: () -> Unit,
+    onDismiss: () -> Unit,
     onPlayAt: (Int) -> Unit,
     onRemove: (Int) -> Unit,
     onClear: () -> Unit,
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val byId = remember(episodes) { episodes.associateBy { it.id } }
     val items = remember(qs.ids) { qs.ids.mapNotNull { byId[it] } }
 
-    SubPage("播放队列", onBack) {
-        if (items.isEmpty()) {
-            EmptyHint("队列是空的。在搜索结果的「播放」或详情页的「加入队列」里添加")
-            return@SubPage
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Tokens.Surface,
+        dragHandle = {
+            Box(
+                Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier.width(36.dp).height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)).background(Tokens.Muted)
+                )
+            }
         }
+    ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("${items.size} 期 · 正在播第 ${qs.index + 1} 期", color = Tokens.Muted, fontSize = 11.sp)
+            Text("播放队列", color = Tokens.OnBg, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(8.dp))
+            if (items.isNotEmpty()) {
+                Text("${items.size} 期 · 第 ${qs.index + 1} 期", color = Tokens.Muted, fontSize = 11.sp)
+            }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onClear) { Text("清空", color = Tokens.Accent, fontSize = 12.sp) }
+            if (items.isNotEmpty()) {
+                TextButton(onClick = onClear) { Text("清空", color = Tokens.Accent, fontSize = 12.sp) }
+            }
         }
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            itemsIndexed(items, key = { _, e -> e.id }) { i, ep ->
-                val playing = i == qs.index
-                Row(
-                    Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (playing) Tokens.Elevated else androidx.compose.ui.graphics.Color.Transparent)
-                        .clickable { onPlayAt(i) }
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        if (playing) "▶" else "${i + 1}",
-                        color = if (playing) Tokens.Primary else Tokens.Muted,
-                        fontSize = 12.sp,
-                        modifier = Modifier.width(24.dp)
-                    )
-                    CoverImage(ep, 46, 10)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
+        Spacer(Modifier.height(6.dp))
+
+        if (items.isEmpty()) {
+            EmptyHint("队列是空的。搜索结果的「播放」或详情页「加入队列」会往这里加")
+        } else {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
+                itemsIndexed(items, key = { _, e -> e.id }) { i, ep ->
+                    val playing = i == qs.index
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (playing) Tokens.Elevated else androidx.compose.ui.graphics.Color.Transparent
+                            )
+                            .clickable { onPlayAt(i) }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            ep.title,
-                            color = if (playing) Tokens.Primary else Tokens.OnBg,
-                            fontSize = 13.sp,
-                            fontWeight = if (playing) FontWeight.Bold else FontWeight.Normal,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                            if (playing) "▶" else "${i + 1}",
+                            color = if (playing) Tokens.Primary else Tokens.Muted,
+                            fontSize = 12.sp, modifier = Modifier.width(24.dp)
                         )
-                        Text("${ep.minutes} 分钟 · ${ep.contentType}",
-                            color = Tokens.Muted, fontSize = 10.sp, maxLines = 1,
-                            overflow = TextOverflow.Ellipsis)
-                    }
-                    IconButton(onClick = { onRemove(i) }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Filled.Close, null, tint = Tokens.Muted, modifier = Modifier.size(16.dp))
+                        CoverImage(ep, 44, 10)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                ep.title,
+                                color = if (playing) Tokens.Primary else Tokens.OnBg,
+                                fontSize = 13.sp,
+                                fontWeight = if (playing) FontWeight.Bold else FontWeight.Normal,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                            Text("${ep.minutes} 分钟 · ${ep.contentType}",
+                                color = Tokens.Muted, fontSize = 10.sp, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis)
+                        }
+                        IconButton(onClick = { onRemove(i) }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Filled.Close, null, tint = Tokens.Muted, modifier = Modifier.size(16.dp))
+                        }
                     }
                 }
+                item { Spacer(Modifier.height(20.dp)) }
             }
-            item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }
