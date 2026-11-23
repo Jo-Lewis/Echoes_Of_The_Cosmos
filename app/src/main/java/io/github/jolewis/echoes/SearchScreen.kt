@@ -267,15 +267,29 @@ fun AiSettingsPage(
     onSave: (LlmConfig) -> Unit,
     onBack: () -> Unit,
 ) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     var base by remember { mutableStateOf(cfg.baseUrl) }
     var key by remember { mutableStateOf(cfg.apiKey) }
     var model by remember { mutableStateOf(cfg.model) }
     var testState by remember { mutableStateOf<String?>(null) }
     var testing by remember { mutableStateOf(false) }
+    var savedAt by remember { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
+    val kb = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+
+    fun dismissInput() {
+        kb?.hide()
+        focus.clearFocus()
+    }
 
     SubPage("AI 设置", onBack) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+        Column(
+            Modifier.fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .imePadding()                 // 键盘弹起时把按钮顶上来
+                .padding(horizontal = 20.dp)
+        ) {
             Spacer(Modifier.height(8.dp))
             Text(
                 "密钥只保存在本机，不会上传也不会进代码仓库。" +
@@ -290,13 +304,15 @@ fun AiSettingsPage(
             Spacer(Modifier.height(12.dp))
             Field("模型", model, "deepseek-chat") { model = it }
 
-            Spacer(Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
                     onClick = {
+                        dismissInput()
                         val c = LlmConfig(base, key, model)
                         onSave(c)
-                        testState = "已保存"
+                        testState = null
+                        savedAt = System.currentTimeMillis()
+                        android.widget.Toast.makeText(ctx, "已保存", android.widget.Toast.LENGTH_SHORT).show()
                     },
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Tokens.Primary)
@@ -304,15 +320,17 @@ fun AiSettingsPage(
 
                 OutlinedButton(
                     onClick = {
-                        testing = true; testState = null
-                        // 在协程里跑一次最小请求
+                        dismissInput()
+                        testing = true
+                        testState = null
+                        val c = LlmConfig(base, key, model)
                         scope.launch {
-                            val c = LlmConfig(base, key, model)
                             testState = runCatching {
                                 Llm.chat(c, "只输出 JSON。", "{\"ok\":true}", maxTokens = 20)
                                 "连接正常"
-                            }.getOrElse { "失败：${it.message?.take(80)}" }
+                            }.getOrElse { "失败：${it.message?.take(90)}" }
                             testing = false
+                            android.widget.Toast.makeText(ctx, testState, android.widget.Toast.LENGTH_SHORT).show()
                         }
                     },
                     enabled = !testing && key.isNotBlank(),
@@ -320,12 +338,45 @@ fun AiSettingsPage(
                 ) { Text(if (testing) "测试中…" else "测试连接", color = Tokens.Primary, fontSize = 13.sp) }
             }
 
-            testState?.let {
-                Spacer(Modifier.height(12.dp))
-                Text(it, color = if (it.startsWith("失败")) Tokens.Accent else Tokens.Primary, fontSize = 12.sp)
+            // 状态放在按钮下方：按钮位置固定，不会因为提示出现而移位
+            Spacer(Modifier.height(14.dp))
+            val statusText = when {
+                testing -> "正在连接…"
+                testState != null -> testState
+                savedAt > 0 -> "已保存"
+                else -> null
+            }
+            if (statusText != null) {
+                val ok = !statusText.startsWith("失败") && !statusText.startsWith("正在")
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                        .background(Tokens.Surface).padding(11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        when {
+                            testing -> Icons.Filled.Sync
+                            ok -> Icons.Filled.CheckCircle
+                            else -> Icons.Filled.ErrorOutline
+                        },
+                        null,
+                        tint = when {
+                            testing -> Tokens.Muted
+                            ok -> Tokens.Primary
+                            else -> Tokens.Accent
+                        },
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        statusText,
+                        color = if (testing) Tokens.Muted else if (ok) Tokens.Primary else Tokens.Accent,
+                        fontSize = 12.sp, lineHeight = 17.sp
+                    )
+                }
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(20.dp))
             Text(
                 "提示：模型要支持 JSON 输出（response_format=json_object）。" +
                     "如果选的是推理模型，单次解析会慢几秒。",
