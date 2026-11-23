@@ -1,4 +1,4 @@
-package com.p2049.player
+package io.github.jolewis.echoes
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

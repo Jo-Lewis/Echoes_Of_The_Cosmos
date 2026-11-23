@@ -1,4 +1,4 @@
-package com.p2049.player
+package io.github.jolewis.echoes
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installCrashLogger()
-        setContent { P2049Theme { App2049(this) } }
+        setContent { EchoesTheme { EchoesApp(this) } }
     }
 
     private fun installCrashLogger() {
@@ -41,9 +41,9 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun App2049(activity: ComponentActivity) {
+fun EchoesApp(activity: ComponentActivity) {
     val box = remember { PlayerBox(activity) }
-    val prefs = remember { activity.getSharedPreferences("p2049", 0) }
+    val prefs = remember { activity.getSharedPreferences("echoes", 0) }
     val tracker = remember { PlayTracker(activity) }
 
     var episodes by remember { mutableStateOf<List<Episode>>(emptyList()) }

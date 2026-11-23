@@ -1,4 +1,4 @@
-package com.p2049.player
+package io.github.jolewis.echoes
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -34,6 +34,6 @@ private val Scheme = darkColorScheme(
 )
 
 @Composable
-fun P2049Theme(content: @Composable () -> Unit) {
+fun EchoesTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = Scheme, content = content)
 }

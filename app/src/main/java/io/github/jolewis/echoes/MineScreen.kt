@@ -1,4 +1,4 @@
-package com.p2049.player
+package io.github.jolewis.echoes
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -372,7 +372,7 @@ fun AboutPage(onBack: () -> Unit) {
     SubPage("关于", onBack) {
         Column(Modifier.padding(horizontal = 20.dp)) {
             Spacer(Modifier.height(10.dp))
-            Text("星河回声", color = Tokens.OnBg, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("星河回响", color = Tokens.OnBg, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text("v0.1.0 · 本地优先", color = Tokens.Muted, fontSize = 12.sp)
             Spacer(Modifier.height(16.dp))
             Text(

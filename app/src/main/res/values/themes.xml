@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.P2049" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.Echoes" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">#12141A</item>
         <item name="android:navigationBarColor">#12141A</item>
         <item name="android:windowBackground">#12141A</item>

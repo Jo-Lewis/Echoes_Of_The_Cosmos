@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.p2049.player"
+    namespace = "io.github.jolewis.echoes"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.p2049.player"
+        applicationId = "io.github.jolewis.echoes"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

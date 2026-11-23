@@ -1,4 +1,4 @@
-# 星河回声 Heecho
+# 星河回响 Heecho
 
 本地优先的私人音频库播放器。为**十几年积累、三千多期的长篇科普音频**（如《2049》）设计：
 你记得听过某一期，但不记得是哪一期；你想按心情听，而不是按日期听。
@@ -72,7 +72,8 @@
 ### 1. 编译 App
 
 ```bash
-git clone <this-repo> && cd heecho
+git clone https://github.com/Jo-Lewis/Echoes_Of_The_Cosmos.git
+cd Echoes_Of_The_Cosmos
 # 指向你的 Android SDK
 echo "sdk.dir=/path/to/Android/sdk" > local.properties
 
