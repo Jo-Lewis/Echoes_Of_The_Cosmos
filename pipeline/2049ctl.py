@@ -19,9 +19,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lib2049 import inventory, build, audio
 
-# 目录可用环境变量覆盖：HEECHO_SRC 原始库 / HEECHO_OUT 构建产物
-SRC = os.environ.get("HEECHO_SRC", os.path.join("library", "raw"))
-OUT = os.environ.get("HEECHO_OUT", os.path.join("library", "build"))
+# 目录可用环境变量覆盖：ECHOES_SRC 原始库 / ECHOES_OUT 构建产物
+SRC = os.environ.get("ECHOES_SRC", os.path.join("library", "raw"))
+OUT = os.environ.get("ECHOES_OUT", os.path.join("library", "build"))
 
 
 def cmd_scan(args):

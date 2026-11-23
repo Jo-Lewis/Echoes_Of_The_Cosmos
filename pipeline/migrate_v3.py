@@ -13,9 +13,9 @@ import shutil
 import sys
 import time
 
-OUT = os.environ.get("HEECHO_OUT", os.path.join("library", "build"))
+OUT = os.environ.get("ECHOES_OUT", os.path.join("library", "build"))
 LIB = os.path.join(OUT, "shows", "2049")
-SRC = os.environ.get("HEECHO_SRC", os.path.join("library", "raw"))
+SRC = os.environ.get("ECHOES_SRC", os.path.join("library", "raw"))
 EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".jfif", ".jpe", ".heic")
 LONG = "\\\\?\\"
 CATEGORY = ("短篇", "长篇")

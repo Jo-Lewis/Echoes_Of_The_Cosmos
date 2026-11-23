@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib2049 import audio
 from lib2049 import inventory
 
-ROOT = os.environ.get("HEECHO_SRC", os.path.join("library", "raw"))
+ROOT = os.environ.get("ECHOES_SRC", os.path.join("library", "raw"))
 
 
 def pick(n=10, max_min=45):

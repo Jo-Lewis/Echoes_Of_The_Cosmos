@@ -267,5 +267,5 @@ def summarize(root):
 
 if __name__ == "__main__":
     import sys
-    root = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("HEECHO_SRC", os.path.join("library", "raw"))
+    root = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("ECHOES_SRC", os.path.join("library", "raw"))
     summarize(root)

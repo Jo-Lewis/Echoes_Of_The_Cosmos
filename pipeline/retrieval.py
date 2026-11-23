@@ -14,7 +14,7 @@ from collections import defaultdict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib2049 import tagging
 
-ROOT = os.environ.get("HEECHO_OUT", os.path.join("library", "build"))
+ROOT = os.environ.get("ECHOES_OUT", os.path.join("library", "build"))
 
 CJK = re.compile(r"[\u4e00-\u9fa5]+")
 

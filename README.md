@@ -1,4 +1,4 @@
-# 星河回响 Heecho
+# 星河回响 Echoes of the Cosmos
 
 本地优先的私人音频库播放器。为**十几年积累、三千多期的长篇科普音频**（如《2049》）设计：
 你记得听过某一期，但不记得是哪一期；你想按心情听，而不是按日期听。
@@ -109,8 +109,8 @@ adb push library/build/. /sdcard/2049lib/
 ## 数据流水线
 
 ```bash
-export HEECHO_SRC=/path/to/raw/library   # 原始音频 + 文稿
-export HEECHO_OUT=./library/build        # 构建产物
+export ECHOES_SRC=/path/to/raw/library   # 原始音频 + 文稿
+export ECHOES_OUT=./library/build        # 构建产物
 
 python pipeline/2049ctl.py scan          # 扫描原始库
 python pipeline/2049ctl.py build         # 构建每期的 meta.json / 文稿 / 封面
