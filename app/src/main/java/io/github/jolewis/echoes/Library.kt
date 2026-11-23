@@ -25,6 +25,8 @@ data class Episode(
     val tone: String,
     val topics: List<String>,
     val keywords: List<String>,
+    val domain: List<String>,
+    val sleepFriendly: Boolean,
     val audioFiles: List<File>,
     val partDurations: List<Int>,
     val images: List<Pic>,
@@ -176,6 +178,8 @@ object Library {
             tone = tax?.optString("tone_primary").orEmpty(),
             topics = strList(tax, "topics"),
             keywords = strList(m, "keywords"),
+            domain = strList(tax, "domain"),
+            sleepFriendly = m.optJSONObject("derived")?.optBoolean("sleep_friendly", false) ?: false,
             audioFiles = audioFiles,
             partDurations = partDurs,
             images = images,
@@ -205,6 +209,7 @@ object Library {
             .put("g", e.gainDb.toDouble()).put("ct", e.contentType)
             .put("lv", e.level).put("ld", e.load).put("hu", e.humor).put("to", e.tone)
             .put("tp", org.json.JSONArray(e.topics)).put("kw", org.json.JSONArray(e.keywords))
+            .put("dm", org.json.JSONArray(e.domain)).put("sf", e.sleepFriendly)
             .put("au", audio).put("im", imgs)
             .put("cv", rel(root, e.cover)).put("bl", rel(root, e.blocks))
             .put("tr", rel(root, e.transcript)).put("dir", rel(root, e.dir))
@@ -244,6 +249,7 @@ object Library {
             contentType = o.optString("ct"), level = o.optInt("lv", 2),
             load = o.optInt("ld", 3), humor = o.optInt("hu", 3), tone = o.optString("to"),
             topics = arr("tp"), keywords = arr("kw"),
+            domain = arr("dm"), sleepFriendly = o.optBoolean("sf", false),
             audioFiles = audioFiles,
             partDurations = partDurs,
             images = images,

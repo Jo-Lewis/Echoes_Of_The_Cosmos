@@ -59,6 +59,9 @@ fun EchoesApp(activity: ComponentActivity) {
     var libQuery by remember { mutableStateOf("") }
     var detail by remember { mutableStateOf<Episode?>(null) }
     var minePage by remember { mutableStateOf<String?>(null) }
+    // 支持 am start --es q ... 直接进入点播（也方便以后做分享/快捷方式）
+    var searchQuery by remember { mutableStateOf<String?>(activity.intent?.getStringExtra("q")) }
+    var llmCfg by remember { mutableStateOf(LlmConfig.load(activity)) }
     var favs by remember { mutableStateOf(prefs.getStringSet("favs", emptySet())!!.toSet()) }
 
     LaunchedEffect(Unit) {
@@ -120,11 +123,12 @@ fun EchoesApp(activity: ComponentActivity) {
         }
     }
 
-    BackHandler(enabled = playerOpen || detail != null || minePage != null || tab != 0) {
+    BackHandler(enabled = playerOpen || detail != null || minePage != null || searchQuery != null || tab != 0) {
         when {
             playerOpen -> playerOpen = false
             detail != null -> detail = null
             minePage != null -> minePage = null
+            searchQuery != null -> searchQuery = null
             else -> tab = 0
         }
     }
@@ -181,6 +185,19 @@ fun EchoesApp(activity: ComponentActivity) {
         return
     }
 
+    searchQuery?.let { q ->
+        SearchScreen(
+            initialQuery = q,
+            episodes = episodes,
+            cfg = llmCfg,
+            onBack = { searchQuery = null },
+            onPlay = { startPlay(it) },
+            onDetail = { detail = it },
+            onOpenSettings = { searchQuery = null; tab = 2; minePage = "ai" },
+        )
+        return
+    }
+
     minePage?.let { page ->
         when (page) {
             "stats" -> StatsPage(episodes, recs) { minePage = null }
@@ -192,6 +209,7 @@ fun EchoesApp(activity: ComponentActivity) {
             }) { minePage = null }
             "library" -> LibraryPage(episodes) { minePage = null }
             "about" -> AboutPage { minePage = null }
+            "ai" -> AiSettingsPage(llmCfg, { c -> c.save(activity); llmCfg = c }) { minePage = null }
         }
         return
     }
@@ -230,9 +248,10 @@ fun EchoesApp(activity: ComponentActivity) {
         Box(Modifier.fillMaxSize().padding(pad)) {
             when (tab) {
                 0 -> HomeScreen(
-                    episodes, recs, current,
+                    episodes, recs, current, llmCfg.ready,
                     onPlay = { startPlay(it) },
                     onDetail = { detail = it },
+                    onSearch = { searchQuery = it },
                     onOpenPlayer = { playerOpen = true },
                     onGoLibrary = { q -> libQuery = q; tab = 1 },
                 )
@@ -243,7 +262,7 @@ fun EchoesApp(activity: ComponentActivity) {
                     onQueryChange = { libQuery = it },
                 )
                 else -> MineScreen(
-                    episodes, recs, favs, sleepMin,
+                    episodes, recs, favs, sleepMin, llmCfg.ready,
                     onOpenPage = { minePage = it },
                 )
             }

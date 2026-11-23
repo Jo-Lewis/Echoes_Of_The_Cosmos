@@ -26,8 +26,10 @@ fun HomeScreen(
     episodes: List<Episode>,
     recs: List<ListenRec>,
     current: Episode?,
+    aiReady: Boolean,
     onPlay: (Episode) -> Unit,
     onDetail: (Episode) -> Unit,
+    onSearch: (String) -> Unit,
     onOpenPlayer: () -> Unit,
     onGoLibrary: (String) -> Unit,
 ) {
@@ -51,8 +53,7 @@ fun HomeScreen(
     fun run(kind: String) {
         val key = if (kind == "auto") q.trim() else kind
         if (key.isBlank()) return
-        val hits = Library.search(episodes, key)
-        if (hits.size == 1) onPlay(hits.first()) else onGoLibrary(key)
+        onSearch(key)          // 交给智能点播：理解 → 召回 → 精排
     }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
@@ -107,8 +108,11 @@ fun HomeScreen(
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-                Text("目前为本地关键词匹配，AI 语义理解尚未接入",
-                    color = Tokens.Muted, fontSize = 10.sp)
+                Text(
+                    if (aiReady) "AI 已就绪：说一句话，帮你选一期"
+                    else "未配置 AI，先按本地关键词匹配（可在「我的 → AI 设置」里填 Key）",
+                    color = Tokens.Muted, fontSize = 10.sp
+                )
             }
         }
 

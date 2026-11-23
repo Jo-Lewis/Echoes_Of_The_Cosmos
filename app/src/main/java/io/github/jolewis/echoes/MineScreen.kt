@@ -28,6 +28,7 @@ fun MineScreen(
     recs: List<ListenRec>,
     favs: Set<String>,
     sleepMin: Int,
+    aiReady: Boolean,
     onOpenPage: (String) -> Unit,
 ) {
     val todaySec = ListenLog.todaySec(recs)
@@ -70,6 +71,8 @@ fun MineScreen(
                 MenuRow(Icons.Filled.Timer, "定时关闭",
                     if (sleepMin == 0) "关" else "$sleepMin 分钟") { onOpenPage("settings") }
                 MenuRow(Icons.Filled.Settings, "播放设置", "定时、跳过、语速") { onOpenPage("settings") }
+                MenuRow(Icons.Filled.AutoAwesome, "AI 设置",
+                    if (aiReady) "已配置，可用自然语言点播" else "未配置，当前为本地匹配") { onOpenPage("ai") }
             }
         }
 
