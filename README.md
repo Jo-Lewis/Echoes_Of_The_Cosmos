@@ -62,7 +62,7 @@
 ## 技术栈
 
 - **客户端**：Kotlin 2.0.21 + Jetpack Compose（Material 3）+ Media3（ExoPlayer / MediaSessionService）
-- **元数据流水线**：Python 3.12+，无第三方依赖（`.doc` 解析、响度测量、标签生成）
+- **元数据流水线**：Python 3.12+，依赖 `olefile` / `mutagen` / `Pillow`（见 `requirements.txt`）
 - **媒体处理**：ffmpeg（`ebur128` 响度测量、`silencedetect` 静音检测）
 
 编译要求：JDK 17+、Android SDK 35、minSdk 26。
@@ -111,6 +111,8 @@ adb push library/build/. /sdcard/2049lib/
 ## 数据流水线
 
 ```bash
+pip install -r requirements.txt
+
 export ECHOES_SRC=/path/to/raw/library   # 原始音频 + 文稿
 export ECHOES_OUT=./library/build        # 构建产物
 
