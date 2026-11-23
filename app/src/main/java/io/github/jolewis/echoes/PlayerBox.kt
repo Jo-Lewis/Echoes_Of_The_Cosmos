@@ -62,7 +62,10 @@ class PlayerBox(private val ctx: Context) {
         return idx to off
     }
 
-    fun playEpisode(ep: Episode, startMs: Long = 0L) {
+    fun playEpisode(ep: Episode, startMs: Long = 0L) = loadEpisode(ep, startMs, autoPlay = true)
+
+    /** autoPlay=false 时只 prepare 并定位，用于进播放页先显示上次进度 */
+    fun loadEpisode(ep: Episode, startMs: Long = 0L, autoPlay: Boolean = true) {
         val c = controller ?: return
         if (ep.audioFiles.isEmpty()) return
 
@@ -86,14 +89,14 @@ class PlayerBox(private val ctx: Context) {
         try {
             c.setMediaItems(items, idx, off)
             c.prepare()
-            c.play()
+            if (autoPlay) c.play()
         } catch (e: Exception) {
             // 兜底：任何位置异常都退回到从头播，而不是崩掉
             Log.e("2049", "playEpisode failed, fallback to 0", e)
             runCatching {
                 c.setMediaItems(items, 0, 0L)
                 c.prepare()
-                c.play()
+                if (autoPlay) c.play()
             }
         }
         applyGain(ep)

@@ -122,6 +122,21 @@ fun EchoesApp(activity: ComponentActivity) {
         if (tab == 2) recs = withContext(Dispatchers.IO) { ListenLog.load(activity) }
     }
 
+    // 打开播放页时先把这一期 prepare 到上次的位置（不自动播），进度条直接显示正确位置
+    LaunchedEffect(playerOpen, current?.id) {
+        if (!playerOpen) return@LaunchedEffect
+        val ep = current ?: return@LaunchedEffect
+        box.connect {
+            val loadedId = box.controller?.currentMediaItem?.mediaId?.substringBefore('#')
+            if (loadedId != ep.id) {
+                val saved = prefs.getLong("pos_" + ep.id, 0L)
+                val durMs = ep.durationSec * 1000L
+                val resume = if (saved > 5000L && saved < durMs - 10000L) saved else 0L
+                box.loadEpisode(ep, resume, autoPlay = false)
+            }
+        }
+    }
+
     LaunchedEffect(sleepUntil) {
         if (sleepUntil <= 0L) return@LaunchedEffect
         while (true) {
@@ -198,12 +213,14 @@ fun EchoesApp(activity: ComponentActivity) {
         else { queue.replace(listOf(ep.id), 0); QueueState.save(activity, queue); playAt(0) }
     }
 
-    // 下一期 / 上一期
+    // 下一期 / 上一期（到边界给提示，而不是毫无反应）
     val playNext: () -> Unit = {
         if (queue.hasNext()) playAt(queue.index + 1)
+        else android.widget.Toast.makeText(activity, "已经是最后一期了", android.widget.Toast.LENGTH_SHORT).show()
     }
     val playPrev: () -> Unit = {
         if (queue.index > 0) playAt(queue.index - 1)
+        else android.widget.Toast.makeText(activity, "已经是第一期了", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     // 一期播完 → 自动下一期

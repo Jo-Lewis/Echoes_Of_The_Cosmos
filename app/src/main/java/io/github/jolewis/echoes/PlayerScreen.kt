@@ -115,7 +115,7 @@ fun PlayerScreen(
         ) { page ->
             when (Mode.values()[page]) {
                 Mode.COVER -> CoverPane(ep)
-                Mode.IMAGE -> ImagePane(ep, playing) { i -> fullscreen = i }
+                Mode.IMAGE -> ImagePane(ep, playing, paused = fullscreen != null) { i -> fullscreen = i }
                 Mode.LYRIC -> LyricPane(ep, posMs, onSeek)
             }
         }
@@ -155,8 +155,8 @@ fun PlayerScreen(
                 IconButton(onClick = onPrev) {
                     Icon(Icons.Filled.SkipPrevious, null, tint = Color.White)
                 }
-                IconButton(onClick = { onSeek((posMs - 15000).coerceAtLeast(0)) }) {
-                    Icon(Icons.Filled.Replay, null, tint = Color.White)
+                IconButton(onClick = { onSeek((posMs - 10000).coerceAtLeast(0)) }) {
+                    Icon(Icons.Filled.Replay10, null, tint = Color.White)
                 }
                 FilledIconButton(
                     onClick = onToggle,
@@ -166,8 +166,8 @@ fun PlayerScreen(
                     Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null,
                         tint = Color.White, modifier = Modifier.size(28.dp))
                 }
-                IconButton(onClick = { onSeek((posMs + 30000).coerceAtLeast(0)) }) {
-                    Icon(Icons.Filled.Forward30, null, tint = Color.White)
+                IconButton(onClick = { onSeek((posMs + 10000).coerceAtLeast(0)) }) {
+                    Icon(Icons.Filled.Forward10, null, tint = Color.White)
                 }
                 IconButton(onClick = onNext) {
                     Icon(Icons.Filled.SkipNext, null, tint = Color.White)
@@ -235,7 +235,7 @@ private fun CoverPane(ep: Episode) {
 // ---------------------------------------------------------------- 画面模式
 
 @Composable
-private fun ImagePane(ep: Episode, playing: Boolean, onOpen: (Int) -> Unit) {
+private fun ImagePane(ep: Episode, playing: Boolean, paused: Boolean, onOpen: (Int) -> Unit) {
     if (ep.images.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("这一期没有配图", color = Dim2)
@@ -246,8 +246,8 @@ private fun ImagePane(ep: Episode, playing: Boolean, onOpen: (Int) -> Unit) {
     var auto by remember(ep.id) { mutableStateOf(true) }
 
     // 自动轮播：key 里不能带 currentPage，否则动画途中索引一变就把协程取消，停在半页
-    LaunchedEffect(auto, playing, ep.id) {
-        if (!auto || !playing) return@LaunchedEffect
+    LaunchedEffect(auto, playing, ep.id, paused) {   // paused 必须进 key，否则运行中的循环停不下来
+        if (!auto || !playing || paused) return@LaunchedEffect
         while (true) {
             delay(7000)
             val next = (pager.currentPage + 1) % ep.images.size
