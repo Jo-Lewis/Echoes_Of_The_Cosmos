@@ -43,7 +43,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun EchoesApp(activity: ComponentActivity) {
     val box = remember { PlayerBox(activity) }
-    val prefs = remember { activity.getSharedPreferences("echoes", 0) }
+    val prefs = remember {
+        Profile.restore(activity)                 // 重装后从媒体库恢复进度/收藏
+        activity.getSharedPreferences("echoes", 0)
+    }
     val tracker = remember { PlayTracker(activity) }
 
     var episodes by remember { mutableStateOf<List<Episode>>(emptyList()) }
@@ -63,6 +66,7 @@ fun EchoesApp(activity: ComponentActivity) {
     var searchQuery by remember { mutableStateOf<String?>(activity.intent?.getStringExtra("q")) }
     var llmCfg by remember { mutableStateOf(LlmConfig.load(activity)) }
     val searchState = remember { SearchState() }
+    var lastDump by remember { mutableStateOf(0L) }
     var favs by remember { mutableStateOf(prefs.getStringSet("favs", emptySet())!!.toSet()) }
 
     LaunchedEffect(Unit) {
@@ -99,8 +103,17 @@ fun EchoesApp(activity: ComponentActivity) {
                 tracker.onTick(ep.id, ep.title, c.currentPosition, ep.durationSec.toLong())
                 prefs.edit().putLong("pos_" + ep.id, c.currentPosition).apply()
             } else tracker.onIdle()
+            if (System.currentTimeMillis() - lastDump > 60_000L) {
+                Profile.dump(activity)
+                lastDump = System.currentTimeMillis()
+            }
             delay(1000)
         }
+    }
+
+    // 退出/切后台时落盘
+    DisposableEffect(Unit) {
+        onDispose { Profile.dump(activity) }
     }
 
     LaunchedEffect(tab) {

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ 的备份/迁移规则 -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="state/" />
+        <exclude domain="sharedpref" path="echoes.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="state/" />
+    </device-transfer>
+</data-extraction-rules>

@@ -37,7 +37,7 @@ data class ListenRec(
 object ListenLog {
     private const val MIN_SEC = 10L
 
-    private fun file(ctx: Context) = File(ctx.filesDir, "listens.jsonl")
+    private fun file(ctx: Context) = State.listensFile(ctx)
 
     @Synchronized
     fun append(ctx: Context, id: String, title: String, sec: Long, at: Long,

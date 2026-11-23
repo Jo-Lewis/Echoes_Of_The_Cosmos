@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 及以下的自动备份规则：只备份用户数据，不备份缓存 -->
+<full-backup-content>
+    <include domain="sharedpref" path="." />
+    <include domain="file" path="state/" />
+    <exclude domain="sharedpref" path="echoes.xml" />   <!-- 里面有 API Key，不备份 -->
+</full-backup-content>

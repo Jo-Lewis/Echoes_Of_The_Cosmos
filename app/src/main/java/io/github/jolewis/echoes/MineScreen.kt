@@ -356,6 +356,13 @@ fun LibraryPage(episodes: List<Episode>, onBack: () -> Unit) {
                 Spacer(Modifier.height(6.dp))
                 Text("用 adb push 更新；改完记得重启 App 让缓存失效",
                     color = Tokens.Muted, fontSize = 11.sp)
+                Spacer(Modifier.height(12.dp))
+                SectionTitle("收听记录存在哪")
+                Text("/sdcard/2049lib/state/", color = Tokens.Muted, fontSize = 11.sp)
+                Spacer(Modifier.height(4.dp))
+                Text("listens.jsonl 是收听流水，profile.json 是进度和收藏。"
+                    + "放这里是为了卸载重装、换手机都不丢；API Key 不在这里。",
+                    color = Tokens.Muted, fontSize = 11.sp, lineHeight = 17.sp)
             }
             item { Spacer(Modifier.height(28.dp)) }
         }
