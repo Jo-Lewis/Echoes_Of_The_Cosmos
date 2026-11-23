@@ -29,6 +29,7 @@ fun MineScreen(
     favs: Set<String>,
     sleepMin: Int,
     aiReady: Boolean,
+    sceneCount: Int,
     onOpenPage: (String) -> Unit,
 ) {
     val todaySec = ListenLog.todaySec(recs)
@@ -68,6 +69,7 @@ fun MineScreen(
 
         item {
             MenuGroup {
+                MenuRow(Icons.Filled.AutoAwesome, "情景模式", "$sceneCount 个模式，可改偏好") { onOpenPage("scenes") }
                 MenuRow(Icons.Filled.Timer, "定时关闭",
                     if (sleepMin == 0) "关" else "$sleepMin 分钟") { onOpenPage("settings") }
                 MenuRow(Icons.Filled.Settings, "播放设置", "定时、跳过、语速") { onOpenPage("settings") }

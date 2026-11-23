@@ -73,6 +73,9 @@ fun PlayerScreen(
     onToggle: () -> Unit,
     onSeek: (Long) -> Unit,
     onBack: () -> Unit,
+    sceneName: String? = null,
+    sceneRemainMin: Int = 0,
+    onExitScene: () -> Unit = {},
     onQueue: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
@@ -105,6 +108,21 @@ fun PlayerScreen(
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onQueue) {
                 Icon(Icons.Filled.QueueMusic, null, tint = Color.White)
+            }
+        }
+
+        // 情景模式提示条：显示并可退出
+        if (sceneName != null) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(10.dp)).background(Tokens.Elevated)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("$sceneName 模式 · 剩余约 $sceneRemainMin 分钟", color = Tokens.Primary, fontSize = 10.sp)
+                Spacer(Modifier.weight(1f))
+                Text("退出", color = Tokens.Muted, fontSize = 10.sp,
+                    modifier = Modifier.clickable { onExitScene() }.padding(horizontal = 6.dp, vertical = 2.dp))
             }
         }
 

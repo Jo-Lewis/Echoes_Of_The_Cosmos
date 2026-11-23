@@ -69,7 +69,11 @@ fun EchoesApp(activity: ComponentActivity) {
     var lastDump by remember { mutableStateOf(0L) }
     val queue = remember { QueueState.load(activity) }
     var queueSheet by remember { mutableStateOf(false) }
-    var scene by remember { mutableStateOf<Scene?>(null) }
+    var scene by remember { mutableStateOf<ScenePrefs?>(null) }
+    var scenes by remember { mutableStateOf(Scenes.load(activity)) }
+    var sceneEdit by remember { mutableStateOf<ScenePrefs?>(null) }
+    var sceneIsNew by remember { mutableStateOf(false) }
+    var sceneRemainMin by remember { mutableStateOf(0) }
     var favs by remember { mutableStateOf(prefs.getStringSet("favs", emptySet())!!.toSet()) }
 
     LaunchedEffect(Unit) {
@@ -116,13 +120,14 @@ fun EchoesApp(activity: ComponentActivity) {
                     remain += e.durationSec * 1000L
                 }
                 remain = (remain - posMs).coerceAtLeast(0L)
-                if (sc.fade > 0) {
-                    val fadeMs = sc.fade * 60_000L
+                sceneRemainMin = (remain / 60_000L).toInt()
+                if (sc.fadeMin > 0) {
+                    val fadeMs = sc.fadeMin * 60_000L
                     Volume.setFadeScene(box.controller, (remain.toFloat() / fadeMs).coerceIn(0f, 1f))
                     if (BuildConfig.DEBUG) {
                         android.util.Log.d(
                             "echoes",
-                            "scene=" + sc.label + " remain=" + (remain / 1000) + "s vol=" + Volume.effective
+                            "scene=" + sc.name + " remain=" + (remain / 1000) + "s vol=" + Volume.effective
                         )
                     }
                 }
@@ -130,7 +135,7 @@ fun EchoesApp(activity: ComponentActivity) {
                     box.controller?.pause()
                     Volume.setFadeScene(box.controller, 1f)
                     scene = null
-                    android.widget.Toast.makeText(activity, "${sc.label}结束，晚安", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(activity, "${sc.name}模式结束，晚安", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
 
@@ -241,18 +246,23 @@ fun EchoesApp(activity: ComponentActivity) {
         else { queue.replace(listOf(ep.id), 0); QueueState.save(activity, queue); playAt(0) }
     }
 
-    // 一键情景：本地挑一批 → 填队列 → 从头播
-    val startScene: (Scene) -> Unit = { sc ->
-        val list = sc.pick(episodes)
+    // 一键情景：本地按偏好挑一批 → 填队列 → 从头播
+    val startScene: (ScenePrefs) -> Unit = { sc ->
+        val list = Scenes.pick(activity, sc, episodes)
         if (list.isEmpty()) {
-            android.widget.Toast.makeText(activity, "库里没有符合「${sc.label}」的节目", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(
+                activity, "没找到符合「" + sc.name + "」条件的节目，去设置里放宽一点试试",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
         } else {
             scene = sc
             Volume.setFadeScene(box.controller, 1f)
             playAll(list)
             val mins = list.sumOf { it.durationSec } / 60
-            android.widget.Toast.makeText(activity, "${sc.label} · ${list.size} 期 · 约 $mins 分钟",
-                android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(
+                activity, sc.name + " · " + list.size + " 期 · 约 " + mins + " 分钟",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -298,6 +308,12 @@ fun EchoesApp(activity: ComponentActivity) {
             onToggle = togglePlay,
             onSeek = { box.controller?.seekTo(it) },
             onBack = { playerOpen = false },
+            sceneName = scene?.name,
+            sceneRemainMin = sceneRemainMin,
+            onExitScene = {
+                scene = null
+                Volume.setFadeScene(box.controller, 1f)
+            },
             onQueue = { queueSheet = true },
             onPrev = playPrev,
             onNext = playNext,
@@ -347,6 +363,32 @@ fun EchoesApp(activity: ComponentActivity) {
         return
     }
 
+    sceneEdit?.let { sc ->
+        SceneEditPage(
+            initial = sc,
+            isNew = sceneIsNew,
+            onBack = { sceneEdit = null },
+            onSave = { updated ->
+                Scenes.upsert(activity, updated)
+                scenes = Scenes.load(activity)
+                if (scene?.id == updated.id) scene = updated
+                sceneEdit = null
+                android.widget.Toast.makeText(activity, "已保存", android.widget.Toast.LENGTH_SHORT).show()
+            },
+            onDelete = {
+                Scenes.remove(activity, sc.id)
+                scenes = Scenes.load(activity)
+                sceneEdit = null
+            },
+            onReset = {
+                Scenes.resetOne(activity, sc.id)
+                scenes = Scenes.load(activity)
+                sceneEdit = null
+            },
+        )
+        return
+    }
+
     minePage?.let { page ->
         when (page) {
             "stats" -> StatsPage(episodes, recs) { minePage = null }
@@ -359,6 +401,20 @@ fun EchoesApp(activity: ComponentActivity) {
             "library" -> LibraryPage(episodes) { minePage = null }
             "about" -> AboutPage { minePage = null }
             "ai" -> AiSettingsPage(llmCfg, { c -> c.save(activity); llmCfg = c }) { minePage = null }
+            "scenes" -> SceneListPage(
+                scenes,
+                onBack = { minePage = null },
+                onEdit = { sceneIsNew = false; sceneEdit = it },
+                onCreate = {
+                    sceneIsNew = true
+                    sceneEdit = ScenePrefs(
+                        id = "custom_" + System.currentTimeMillis(),
+                        name = "我的模式",
+                        emoji = "⭐",
+                        builtin = false,
+                    )
+                },
+            )
         }
         return
     }
@@ -382,10 +438,18 @@ fun EchoesApp(activity: ComponentActivity) {
             when (tab) {
                 0 -> HomeScreen(
                     episodes, recs, current, llmCfg.ready,
+                    scenes = scenes,
+                    activeScene = scene,
+                    sceneRemainMin = sceneRemainMin,
                     onPlay = { startPlay(it) },
                     onDetail = { detail = it },
                     onSearch = { q -> searchState.finishedFor = null; searchQuery = q },
                     onScene = { startScene(it) },
+                    onExitScene = {
+                        scene = null
+                        Volume.setFadeScene(box.controller, 1f)
+                        android.widget.Toast.makeText(activity, "已退出情景模式", android.widget.Toast.LENGTH_SHORT).show()
+                    },
                     onOpenPlayer = { playerOpen = true },
                     onGoLibrary = { q -> libQuery = q; tab = 1 },
                 )
@@ -396,7 +460,7 @@ fun EchoesApp(activity: ComponentActivity) {
                     onQueryChange = { libQuery = it },
                 )
                 else -> MineScreen(
-                    episodes, recs, favs, sleepMin, llmCfg.ready,
+                    episodes, recs, favs, sleepMin, llmCfg.ready, scenes.size,
                     onOpenPage = { minePage = it },
                 )
             }

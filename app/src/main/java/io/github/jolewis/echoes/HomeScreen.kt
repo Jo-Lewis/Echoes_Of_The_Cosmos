@@ -30,7 +30,11 @@ fun HomeScreen(
     onPlay: (Episode) -> Unit,
     onDetail: (Episode) -> Unit,
     onSearch: (String) -> Unit,
-    onScene: (Scene) -> Unit,
+    scenes: List<ScenePrefs>,
+    activeScene: ScenePrefs?,
+    sceneRemainMin: Int,
+    onScene: (ScenePrefs) -> Unit,
+    onExitScene: () -> Unit,
     onOpenPlayer: () -> Unit,
     onGoLibrary: (String) -> Unit,
 ) {
@@ -120,7 +124,11 @@ fun HomeScreen(
         // 情景模式：一键按此刻状态听
         item {
             SectionTitle("现在是什么状态")
-            SceneRow { onScene(it) }
+            activeScene?.let { sc ->
+                SceneBanner(sc, sceneRemainMin) { onExitScene() }
+                Spacer(Modifier.height(10.dp))
+            }
+            SceneRow(scenes) { onScene(it) }
         }
 
         // 继续收听
