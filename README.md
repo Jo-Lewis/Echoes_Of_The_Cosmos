@@ -1,5 +1,7 @@
 # 星河回响 Echoes of the Cosmos
 
+[![Android CI](https://github.com/Jo-Lewis/Echoes_Of_The_Cosmos/actions/workflows/android.yml/badge.svg)](https://github.com/Jo-Lewis/Echoes_Of_The_Cosmos/actions/workflows/android.yml)
+
 本地优先的私人音频库播放器。为**十几年积累、三千多期的长篇科普音频**（如《2049》）设计：
 你记得听过某一期，但不记得是哪一期；你想按心情听，而不是按日期听。
 

@@ -1,0 +1,58 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: 编译 APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: 安装 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 赋予 gradlew 执行权限
+        run: chmod +x gradlew
+
+      - name: 编译 debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  pipeline:
+    name: 检查流水线脚本
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 语法检查
+        run: python -m compileall -q pipeline
+
+      - name: 命令行入口可用
+        run: python pipeline/2049ctl.py --help
