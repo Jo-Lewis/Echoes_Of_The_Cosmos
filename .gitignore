@@ -1,0 +1,42 @@
+# ---- Android / Gradle ----
+.gradle/
+build/
+app/build/
+*.apk
+*.aab
+*.ap_
+*.dex
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+
+# ---- IDE ----
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.kotlin/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# ---- 媒体库与产物（绝不应提交）----
+library/
+*.mp3
+*.m4a
+*.wav
+*.doc
+*.docx
+*.pdf
+
+# ---- 本机杂项 ----
+*.log
+crash-*.txt
+.DS_Store
+Thumbs.db
