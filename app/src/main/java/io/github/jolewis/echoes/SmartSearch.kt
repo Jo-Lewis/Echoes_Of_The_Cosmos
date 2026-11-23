@@ -21,7 +21,14 @@ data class Intent(
     val sleep: Boolean = false,
     val exclude: List<String> = emptyList(),
     val want: String = "",
-)
+) {
+    /** 全空 = 模型什么都没给出来（多半解析失败），不是"只想按风格听"。 */
+    val isEmpty: Boolean
+        get() = topics.isEmpty() && domain.isEmpty() && contentType.isBlank() &&
+            tone.isEmpty() && humorMin == 0 && loadMax == 0 && levelMax == 0 &&
+            yearMin == 0 && durationMin == 0 && durationMax == 0 && !sleep &&
+            exclude.isEmpty() && want.isBlank()
+}
 
 data class SearchResult(
     val pick: Episode,
@@ -31,11 +38,10 @@ data class SearchResult(
     val candidates: List<Pair<Episode, Double>>,
     val intent: Intent,
     val usedLlm: Boolean,
-    /** AI 失败时的说明，空串表示一切正常 */
+    /** AI 失败/放宽条件时的说明，空串表示一切正常 */
     val note: String = "",
 )
 
-/** 检索进度，UI 按这三个阶段显示。 */
 enum class SearchPhase(val label: String) {
     UNDERSTAND("理解需求"),
     RECALL("检索节目"),
@@ -46,33 +52,50 @@ enum class SearchPhase(val label: String) {
 
 object SmartSearch {
 
+    private val DOMAINS = listOf(
+        "天文", "物理", "化学", "生物", "医学", "地球科学", "数学",
+        "计算机", "工程", "军事", "历史", "人文社科", "哲学", "杂项"
+    )
+    private val CONTENT_TYPES = listOf(
+        "科普讲解", "人物传记", "历史叙事", "时事评论", "答疑互动", "实验演示", "系列专题", "杂谈漫聊"
+    )
+    private val TONES = listOf("好奇", "平静", "震撼", "沉痛", "热血", "怀旧", "轻松", "紧张")
+
     // ---------------------------------------------------------- 提示词
 
-    private const val INTENT_SYS = """你是音频点播助手的查询理解模块。把用户的一句话翻译成检索条件。
+    /** 字段说明和 validateIntent 的规则必须同步维护。 */
+    private val INTENT_SYS = """你是音频点播助手的查询理解模块。把用户的一句话翻译成检索条件。
 
 **重要**：如果用户只说了情绪、场景、时长（"轻松有趣的""睡前听""短一点"），
 topics 和 domain 就必须留空——不要为了填满字段而编造主题词。
-编出来的"轻松科普""趣味知识"会污染关键词召回。
 
-字段：
-- topics: 只填用户明确提到的具体主题（火星、鲁迅、脱欧、咖啡），否则 []。2-5 个
-- domain: 只在用户说了学科时才填（"讲点物理""历史类的"），否则 []
-  选项：[天文,物理,化学,生物,医学,地球科学,数学,计算机,工程,军事,历史,人文社科,哲学,杂项]
-- content_type: 只在用户明确要类型时填（"想听个故事"→历史叙事/人物传记），否则 ""
-  选项：[科普讲解,人物传记,历史叙事,时事评论,答疑互动,实验演示,系列专题,杂谈漫聊]
-- tone: 情绪，0-2 个，从 [好奇,平静,震撼,沉痛,热血,怀旧,轻松,紧张]
+**输出格式**：只输出一个 JSON 对象，不要 markdown 代码块，不要任何解释文字。
+所有字段都必须出现，没有就填空值。
+
+{
+  "topics": ["用户明确提到的具体主题，2-5 个，否则空数组"],
+  "domain": ["只在用户说了学科时填，从 ${DOMAINS.joinToString("/")} 里选"],
+  "content_type": "只在用户明确要类型时填，从 ${CONTENT_TYPES.joinToString("/")} 里选，否则空串",
+  "tone": ["情绪，0-2 个，从 ${TONES.joinToString("/")} 里选"],
+  "humor_min": 0,
+  "load_max": 0,
+  "level_max": 0,
+  "year_min": 0,
+  "duration_min": 0,
+  "duration_max": 0,
+  "sleep": false,
+  "exclude": [],
+  "want": "一句话复述用户意图"
+}
+
+字段含义：
 - humor_min: 1-5，想要多有趣（"轻松有趣"=4，"严肃"=2），没说就 0
-- load_max: 1-5，能接受的动脑程度（"不想动脑/不费脑"=2，"随便"=3），没说就 0
+- load_max: 1-5，能接受的动脑程度（"不想动脑"=2），没说就 0
 - level_max: 1-3，知识门槛（"入门/小白"=1），没说就 0
-- year_min: 4 位年份，用户说了"2024 年之后"这类时间限制时才填，否则 0
-- duration_min / duration_max: 秒（"十几分钟"=600/1200，"一小时"=3000/4200），没说就 0
-- sleep: true/false，是否明确要睡前的
-- exclude: 不想要的内容
-- want: 一句话复述用户意图
+- duration_min/max: 秒（"十几分钟"=600/1200，"一小时"=3000/4200），没说就 0
+- sleep: 是否明确要睡前的"""
 
-只输出 JSON。"""
-
-    private const val RERANK_SYS = """你是音频点播的选片员。给用户的一句话和一批候选节目，选出最该播的那一期。
+    private val RERANK_SYS = """你是音频点播的选片员。给用户的一句话和一批候选节目，选出最该播的那一期。
 
 判断顺序：
 
@@ -81,38 +104,74 @@ topics 和 domain 就必须留空——不要为了填满字段而编造主题�
 3. **风格匹配**：情绪、趣味度、深浅、节奏是否符合用户此刻的状态。
 4. **硬约束**：用户给了时长范围就必须满足；满足不了要在 reason 里说明。
 
-输出 JSON：
-{"pick": "<序号>", "reason": "≤25字，说清为什么选它", "queue": ["序号","序号"], "confidence": 0.0-1.0}
+**输出格式**：只输出一个 JSON 对象，不要代码块：
+{"pick": 1, "reason": "≤25字", "queue": [2,3,4], "confidence": 0.8}
 
-pick 和 queue 都填序号数字。queue 给 3-6 个相关的，要多样，不要全是一个系列。只输出 JSON。"""
+pick 和 queue 都填**序号数字**（不是节目名）。queue 给 3-6 个，要多样，不要全是一个系列。"""
 
-    // ---------------------------------------------------------- 意图解析
+    // ---------------------------------------------------------- 解析与校验
 
-    fun parseIntent(raw: String): Intent = runCatching {
-        val o = JSONObject(raw)
-        fun strList(k: String): List<String> {
-            val a = o.optJSONArray(k) ?: return emptyList()
-            return (0 until a.length()).map { a.optString(it).trim() }.filter { it.isNotEmpty() }
+    private fun extractJson(raw: String): String {
+        val s = raw.trim()
+        if (s.startsWith("{") && s.endsWith("}")) return s
+        val start = s.indexOf('{')
+        val end = s.lastIndexOf('}')
+        return if (start >= 0 && end > start) s.substring(start, end + 1) else s
+    }
+
+    /** 把模型输出收敛到合法值；返回 null 表示完全不可用。 */
+    private fun validateIntent(raw: String): Intent? {
+        val o = runCatching { JSONObject(extractJson(raw)) }.getOrNull() ?: return null
+
+        fun strList(key: String, vocab: List<String>?, maxN: Int): List<String> {
+            val a = o.optJSONArray(key) ?: return emptyList()
+            val out = ArrayList<String>()
+            for (i in 0 until a.length()) {
+                val v = a.optString(i).trim()
+                if (v.isEmpty() || v == "null" || v in out) continue
+                if (vocab != null && v !in vocab) continue       // 丢弃编造的枚举
+                out.add(v)
+                if (out.size >= maxN) break
+            }
+            return out
         }
-        Intent(
-            topics = strList("topics").take(5),
-            domain = strList("domain").take(3),
-            contentType = o.optString("content_type").trim().takeIf { it != "null" }.orEmpty(),
-            tone = strList("tone").take(2),
-            humorMin = o.optInt("humor_min", 0).coerceIn(0, 5),
-            loadMax = o.optInt("load_max", 0).coerceIn(0, 5),
-            levelMax = o.optInt("level_max", 0).coerceIn(0, 3),
-            yearMin = o.optInt("year_min", 0),
-            durationMin = o.optInt("duration_min", 0),
-            durationMax = o.optInt("duration_max", 0),
-            sleep = o.optBoolean("sleep", false),
-            exclude = strList("exclude").take(3),
-            want = o.optString("want").trim(),
-        )
-    }.getOrElse { Intent(want = raw.take(40)) }
 
-    suspend fun understand(cfg: LlmConfig, query: String): Intent =
-        parseIntent(Llm.chat(cfg, INTENT_SYS, query, maxTokens = 400))
+        fun num(key: String, lo: Int, hi: Int): Int =
+            runCatching { o.optInt(key, 0) }.getOrDefault(0).coerceIn(lo, hi)
+
+        val ct = o.optString("content_type").trim().let { if (it in CONTENT_TYPES) it else "" }
+
+        return Intent(
+            topics = strList("topics", null, 5),
+            domain = strList("domain", DOMAINS, 3),
+            contentType = ct,
+            tone = strList("tone", TONES, 2),
+            humorMin = num("humor_min", 0, 5),
+            loadMax = num("load_max", 0, 5),
+            levelMax = num("level_max", 0, 3),
+            yearMin = num("year_min", 0, 2100),
+            durationMin = num("duration_min", 0, 86400),
+            durationMax = num("duration_max", 0, 86400),
+            sleep = o.optBoolean("sleep", false),
+            exclude = strList("exclude", null, 3),
+            want = o.optString("want").trim().take(60).takeIf { it != "null" }.orEmpty(),
+        )
+    }
+
+    /** 解析意图；失败带错误原因重试一次（官方口径单次 85%，重试把失败率压到 ~2%）。 */
+    suspend fun understand(cfg: LlmConfig, query: String): Intent {
+        var lastRaw = ""
+        for (attempt in 0..1) {
+            val user = if (attempt == 0) query else
+                "$query\n\n上一次的返回无法解析成约定格式：\n${lastRaw.take(200)}\n" +
+                    "请只输出一个合法 JSON 对象，字段与约定一致，不要解释。"
+            val raw = Llm.chat(cfg, INTENT_SYS, user, maxTokens = 1200)
+            lastRaw = raw
+            val parsed = validateIntent(raw)
+            if (parsed != null && !parsed.isEmpty) return parsed
+        }
+        return Intent()
+    }
 
     // ---------------------------------------------------------- 召回
 
@@ -128,7 +187,6 @@ pick 和 queue 都填序号数字。queue 给 3-6 个相关的，要多样，不
         return out
     }
 
-    /** BM25-lite 索引：只在第一次检索时建，之后复用。 */
     class Index(val eps: List<Episode>) {
         private val n = eps.size
         private val post = HashMap<String, MutableList<Int>>()
@@ -177,34 +235,33 @@ pick 和 queue 都填序号数字。queue 给 3-6 个相关的，要多样，不
         append(' ').append(e.domain.joinToString(" "))
     }
 
-    private fun tagScore(e: Episode, it: Intent): Double {
+    private fun tagScore(e: Episode, intent: Intent): Double {
         var s = 0.0
         var w = 0.0
-        if (it.domain.isNotEmpty()) {
+        if (intent.domain.isNotEmpty()) {
             w += 0.18
-            val hit = it.domain.toSet().intersect(e.domain.toSet()).size
-            s += 0.18 * (hit.toDouble() / max(1, it.domain.size))
+            s += 0.18 * (intent.domain.toSet().intersect(e.domain.toSet()).size.toDouble() / max(1, intent.domain.size))
         }
-        if (it.contentType.isNotEmpty()) {
+        if (intent.contentType.isNotEmpty()) {
             w += 0.18
-            if (e.contentType == it.contentType) s += 0.18
+            if (e.contentType == intent.contentType) s += 0.18
         }
-        if (it.tone.isNotEmpty()) {
+        if (intent.tone.isNotEmpty()) {
             w += 0.20
-            val hit = it.tone.count { t -> t == e.tone }
-            s += 0.20 * min(1.0, hit.toDouble() / max(1, it.tone.size))
+            val hit = intent.tone.count { t -> t == e.tone }
+            s += 0.20 * min(1.0, hit.toDouble() / max(1, intent.tone.size))
         }
-        if (it.humorMin > 0) {
+        if (intent.humorMin > 0) {
             w += 0.16
-            s += 0.16 * max(0.0, min(1.0, (e.humor - it.humorMin + 1) / 2.0))
+            s += 0.16 * max(0.0, min(1.0, (e.humor - intent.humorMin + 1) / 2.0))
         }
-        if (it.loadMax > 0) {
+        if (intent.loadMax > 0) {
             w += 0.14
-            if (e.load <= it.loadMax) s += 0.14
+            if (e.load <= intent.loadMax) s += 0.14
         }
-        if (it.levelMax > 0) {
+        if (intent.levelMax > 0) {
             w += 0.14
-            if (e.level <= it.levelMax) s += 0.14
+            if (e.level <= intent.levelMax) s += 0.14
         }
         return if (w > 0) s / w else 0.0
     }
@@ -215,7 +272,7 @@ pick 和 queue 都填序号数字。queue 给 3-6 个相关的，要多样，不
         var hit = 0.0
         topics.forEach { q ->
             when {
-                e.title.contains(q) || hay.any { it.contains(q) || q.contains(it) } -> hit += 1.0
+                e.title.contains(q) || hay.any { it.contains(q) } -> hit += 1.0
                 hay.any { it.length >= 2 && (q.contains(it) || it.contains(q)) } -> hit += 0.6
                 q.length >= 2 && e.topics.joinToString("").contains(q) -> hit += 0.4
             }
@@ -223,42 +280,65 @@ pick 和 queue 都填序号数字。queue 给 3-6 个相关的，要多样，不
         return min(1.0, hit / topics.size)
     }
 
-    private fun passFilter(e: Episode, it: Intent): Boolean {
-        if (it.durationMin > 0 && e.durationSec < it.durationMin) return false
-        if (it.durationMax > 0 && e.durationSec > it.durationMax) return false
-        if (it.levelMax > 0 && e.level > it.levelMax) return false
-        if (it.yearMin > 0 && e.year < it.yearMin) return false
-        if (it.sleep && !e.sleepFriendly) return false
+    /** 睡前友好：优先元数据标注，缺了就用「低负荷 + 不激烈」兜底。 */
+    private fun quiet(e: Episode): Boolean =
+        e.sleepFriendly || (e.load <= 2 && e.humor <= 3 && e.tone in listOf("平静", "怀旧", "好奇"))
+
+    private fun passFilter(e: Episode, intent: Intent): Boolean {
+        if (intent.durationMin > 0 && e.durationSec < intent.durationMin) return false
+        if (intent.durationMax > 0 && e.durationSec > intent.durationMax) return false
+        if (intent.levelMax > 0 && e.level > intent.levelMax) return false
+        if (intent.yearMin > 0 && e.year < intent.yearMin) return false
+        if (intent.sleep && !quiet(e)) return false
         val hay = e.title + " " + e.topics.joinToString(" ")
-        it.exclude.forEach { bad -> if (bad.isNotBlank() && hay.contains(bad)) return false }
+        intent.exclude.forEach { bad -> if (bad.isNotBlank() && hay.contains(bad)) return false }
         return true
     }
 
-    fun recall(index: Index, query: String, it: Intent, k: Int = 40): List<Pair<Episode, Double>> {
-        val lex = index.lexical(query)
+    private fun scoreWith(
+        index: Index,
+        lex: Map<Int, Double>,
+        intent: Intent,
+        k: Int,
+    ): List<Pair<Episode, Double>> {
         val wLex: Double
         val wTag: Double
         val wTopic: Double
-        if (it.topics.isEmpty()) {
+        if (intent.topics.isEmpty()) {
             wLex = 0.55; wTag = 0.45; wTopic = 0.0
         } else {
             wLex = 0.45; wTag = 0.25; wTopic = 0.30
         }
-
         val scored = ArrayList<Pair<Episode, Double>>()
         index.eps.forEachIndexed { i, e ->
-            if (!passFilter(e, it)) return@forEachIndexed
-            val sc = wLex * (lex[i] ?: 0.0) + wTag * tagScore(e, it) + wTopic * topicHit(e, it.topics)
+            if (!passFilter(e, intent)) return@forEachIndexed
+            val sc = wLex * (lex[i] ?: 0.0) + wTag * tagScore(e, intent) + wTopic * topicHit(e, intent.topics)
             if (sc > 0.02) scored.add(e to sc)
         }
         scored.sortByDescending { it.second }
-        if (scored.isNotEmpty()) return scored.take(k)
+        return scored.take(k)
+    }
 
-        // 只有硬约束、本地分全 0 时兜底：按时长降序给一批
-        return index.eps.filter { e -> passFilter(e, it) }
-            .sortedByDescending { it.durationSec }
-            .take(k)
-            .map { it to 0.001 }
+    data class Recall(val hits: List<Pair<Episode, Double>>, val relaxed: Boolean)
+
+    /**
+     * 召回。约束太严导致筛空时逐级放宽，而不是直接说"没有"。
+     * 顺序：原条件 → 去掉睡前 → 去掉时长 → 去掉门槛/年份。
+     */
+    fun recall(index: Index, query: String, intent: Intent, k: Int = 40): Recall {
+        val lex = index.lexical(query)
+        val variants = listOf(
+            intent,
+            intent.copy(sleep = false),
+            intent.copy(sleep = false, durationMin = 0, durationMax = 0),
+            intent.copy(sleep = false, durationMin = 0, durationMax = 0, levelMax = 0, yearMin = 0),
+        )
+        variants.forEachIndexed { i, v ->
+            val hits = scoreWith(index, lex, v, k)
+            if (hits.isNotEmpty()) return Recall(hits, i > 0)
+        }
+        val fallback = index.eps.sortedByDescending { it.durationSec }.take(k).map { it to 0.001 }
+        return Recall(fallback, true)
     }
 
     // ---------------------------------------------------------- 精排
@@ -270,39 +350,51 @@ pick 和 queue 都填序号数字。queue 给 3-6 个相关的，要多样，不
 
     data class Ranked(val pickIndex: Int, val reason: String, val queue: List<Int>, val confidence: Double)
 
-    private fun parseRank(raw: String, size: Int): Ranked = runCatching {
-        val o = JSONObject(raw)
+    private fun parseRank(raw: String, size: Int): Ranked? {
+        val o = runCatching { JSONObject(extractJson(raw)) }.getOrNull() ?: return null
+
         fun idx(v: Any?): Int? {
             val k = (v?.toString() ?: "").trim().trim('.', '[', ']', ' ').toIntOrNull() ?: return null
             return if (k in 1..size) k - 1 else null
         }
-        val pick = idx(o.opt("pick")) ?: 0
-        val q = ArrayList<Int>()
-        val arr = o.optJSONArray("queue")
-        if (arr != null) {
-            for (i in 0 until arr.length()) idx(arr.opt(i))?.let { if (it !in q) q.add(it) }
+
+        val pick = idx(o.opt("pick")) ?: return null
+        val queue = ArrayList<Int>()
+        o.optJSONArray("queue")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                idx(arr.opt(i))?.let { if (it != pick && it !in queue) queue.add(it) }
+            }
         }
-        Ranked(pick, o.optString("reason").trim(), q.take(6),
-            o.optDouble("confidence", 0.0).coerceIn(0.0, 1.0))
-    }.getOrDefault(Ranked(0, "", emptyList(), 0.0))
+        return Ranked(
+            pick,
+            o.optString("reason").trim().take(40).takeIf { it != "null" }.orEmpty(),
+            queue.take(6),
+            o.optDouble("confidence", 0.0).coerceIn(0.0, 1.0),
+        )
+    }
 
     suspend fun rerank(
         cfg: LlmConfig,
         query: String,
-        it: Intent,
+        intent: Intent,
         cands: List<Pair<Episode, Double>>,
-    ): Ranked {
+    ): Ranked? {
         val listing = cands.mapIndexed { i, (e, _) -> card(e, i + 1) }.joinToString("\n")
-        val user = "用户说：$query\n意图：${it.want}\n\n候选（序号 = 下标+1）：\n$listing"
-        return parseRank(Llm.chat(cfg, RERANK_SYS, user, maxTokens = 500), cands.size)
+        val base = "用户说：$query\n意图：${intent.want}\n\n候选（序号 = 下标+1）：\n$listing"
+        var lastRaw = ""
+        for (attempt in 0..1) {
+            val user = if (attempt == 0) base else
+                "$base\n\n上一次返回无法解析（pick 必须是 1-${cands.size} 的数字）：\n${lastRaw.take(160)}\n" +
+                    "请只输出 JSON。"
+            val raw = Llm.chat(cfg, RERANK_SYS, user, maxTokens = 1600)
+            lastRaw = raw
+            parseRank(raw, cands.size)?.let { return it }
+        }
+        return null
     }
 
     // ---------------------------------------------------------- 编排
 
-    /**
-     * 完整流程：理解 → 召回 → 精排。
-     * 没有配置 Key 时直接走本地召回，结果标注「本地匹配」。
-     */
     suspend fun run(
         cfg: LlmConfig,
         index: Index,
@@ -310,49 +402,48 @@ pick 和 queue 都填序号数字。queue 给 3-6 个相关的，要多样，不
         onPhase: (SearchPhase) -> Unit,
         onIntent: (Intent) -> Unit = {},
     ): SearchResult? {
-        var it: Intent
-        var usedLlm = false
         var note = ""
+        var intent = Intent()
 
         if (cfg.ready) {
             onPhase(SearchPhase.UNDERSTAND)
-            it = runCatching { understand(cfg, query) }
-                .getOrElse {
-                    note = "意图解析失败：${it.message?.take(60)}"
-                    Intent()
-                }
+            runCatching { understand(cfg, query) }
+                .onSuccess { intent = it }
+                .onFailure { note = "理解失败：${it.message?.take(60)}" }
+            if (intent.isEmpty && note.isBlank()) {
+                note = "AI 没能理解这句话，已退回关键词匹配"
+            }
         } else {
             onPhase(SearchPhase.LOCAL_ONLY)
-            it = Intent()
         }
-        onIntent(it)
+        onIntent(intent)
 
         onPhase(SearchPhase.RECALL)
-        val cands = recall(index, query, it, k = 40)
-        if (cands.isEmpty()) return null
+        val rc = recall(index, query, intent, k = 40)
+        if (rc.hits.isEmpty()) return null
+        if (rc.relaxed && note.isBlank()) note = "按条件没筛出结果，已放宽限制"
 
         if (cfg.ready) {
             onPhase(SearchPhase.RERANK)
-            val ranked = runCatching { rerank(cfg, query, it, cands) }
-                .onFailure { note = "AI 选片失败：${it.message?.take(60)}" }
-                .getOrNull()
+            val ranked = runCatching { rerank(cfg, query, intent, rc.hits) }.getOrNull()
             if (ranked != null) {
-                usedLlm = true
-                val pick = cands[ranked.pickIndex].first
-                val queue = ranked.queue.mapNotNull { cands.getOrNull(it)?.first }.filter { it.id != pick.id }
+                val pick = rc.hits[ranked.pickIndex].first
+                val queue = ranked.queue.mapNotNull { rc.hits.getOrNull(it)?.first }
+                    .filter { it.id != pick.id }
                 onPhase(SearchPhase.DONE)
-                return SearchResult(pick, ranked.reason, queue, ranked.confidence, cands, it, true, note)
+                return SearchResult(pick, ranked.reason, queue, ranked.confidence, rc.hits, intent, true, note)
             }
+            if (note.isBlank()) note = "AI 选片失败，已按关键词排序"
         }
 
         onPhase(SearchPhase.DONE)
         return SearchResult(
-            pick = cands.first().first,
+            pick = rc.hits.first().first,
             reason = "",
-            queue = cands.drop(1).take(5).map { it.first },
+            queue = rc.hits.drop(1).take(5).map { it.first },
             confidence = 0.0,
-            candidates = cands,
-            intent = it,
+            candidates = rc.hits,
+            intent = intent,
             usedLlm = false,
             note = note,
         )

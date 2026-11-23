@@ -49,6 +49,23 @@ object Llm {
         .readTimeout(90, TimeUnit.SECONDS)
         .build()
 
+    /** 拉取可用模型列表（OpenAI 兼容的 GET /models）。 */
+    suspend fun models(cfg: LlmConfig): List<String> = withContext(Dispatchers.IO) {
+        val req = Request.Builder()
+            .url(cfg.baseUrl.trimEnd('/') + "/models")
+            .header("Authorization", "Bearer " + cfg.apiKey)
+            .get()
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) throw IOException("HTTP " + resp.code + "：" + text.take(120))
+            val arr = JSONObject(text).optJSONArray("data") ?: return@withContext emptyList()
+            (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONObject(i)?.optString("id")?.takeIf { it.isNotBlank() && it != "null" }
+            }
+        }
+    }
+
     /** 调一次 chat/completions，返回 message.content。异常直接抛给上层。 */
     suspend fun chat(
         cfg: LlmConfig,

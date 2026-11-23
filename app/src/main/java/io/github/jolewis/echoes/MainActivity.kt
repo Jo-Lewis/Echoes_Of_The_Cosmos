@@ -62,6 +62,7 @@ fun EchoesApp(activity: ComponentActivity) {
     // 支持 am start --es q ... 直接进入点播（也方便以后做分享/快捷方式）
     var searchQuery by remember { mutableStateOf<String?>(activity.intent?.getStringExtra("q")) }
     var llmCfg by remember { mutableStateOf(LlmConfig.load(activity)) }
+    val searchState = remember { SearchState() }
     var favs by remember { mutableStateOf(prefs.getStringSet("favs", emptySet())!!.toSet()) }
 
     LaunchedEffect(Unit) {
@@ -185,9 +186,26 @@ fun EchoesApp(activity: ComponentActivity) {
         return
     }
 
+    detail?.let { d ->
+        EpisodeDetailScreen(
+            ep = d, all = episodes,
+            progressSec = (prefs.getLong("pos_" + d.id, 0L)) / 1000,
+            favorite = favs.contains(d.id),
+            onBack = { detail = null },
+            onPlay = { startPlay(d) },
+            onToggleFavorite = {
+                favs = if (favs.contains(d.id)) favs - d.id else favs + d.id
+                prefs.edit().putStringSet("favs", favs).apply()
+            },
+            onOpen = { detail = it },
+        )
+        return
+    }
+
     searchQuery?.let { q ->
         SearchScreen(
             initialQuery = q,
+            state = searchState,
             episodes = episodes,
             cfg = llmCfg,
             onBack = { searchQuery = null },
@@ -214,22 +232,6 @@ fun EchoesApp(activity: ComponentActivity) {
         return
     }
 
-    detail?.let { d ->
-        EpisodeDetailScreen(
-            ep = d, all = episodes,
-            progressSec = (prefs.getLong("pos_" + d.id, 0L)) / 1000,
-            favorite = favs.contains(d.id),
-            onBack = { detail = null },
-            onPlay = { startPlay(d) },
-            onToggleFavorite = {
-                favs = if (favs.contains(d.id)) favs - d.id else favs + d.id
-                prefs.edit().putStringSet("favs", favs).apply()
-            },
-            onOpen = { detail = it },
-        )
-        return
-    }
-
     Scaffold(
         containerColor = Tokens.Bg,
         bottomBar = {
@@ -251,7 +253,7 @@ fun EchoesApp(activity: ComponentActivity) {
                     episodes, recs, current, llmCfg.ready,
                     onPlay = { startPlay(it) },
                     onDetail = { detail = it },
-                    onSearch = { searchQuery = it },
+                    onSearch = { q -> searchState.finishedFor = null; searchQuery = q },
                     onOpenPlayer = { playerOpen = true },
                     onGoLibrary = { q -> libQuery = q; tab = 1 },
                 )

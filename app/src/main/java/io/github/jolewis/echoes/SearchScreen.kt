@@ -4,12 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -22,16 +23,36 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * 搜索状态提到 App 层持有，切页面（去播放、看详情、返回）都不会丢，
+ * 也不会重复调用 LLM。
+ */
+class SearchState {
+    var query by mutableStateOf("")
+    var phase by mutableStateOf(SearchPhase.LOCAL_ONLY)
+    var running by mutableStateOf(false)
+    var result by mutableStateOf<SearchResult?>(null)
+    var error by mutableStateOf<String?>(null)
+    var intent by mutableStateOf<Intent?>(null)
+    var index: SmartSearch.Index? = null
+
+    /** 已经算完的查询词；等于当前词就不再重跑 */
+    var finishedFor: String? = null
+}
 
 @Composable
 fun SearchScreen(
     initialQuery: String,
+    state: SearchState,
     episodes: List<Episode>,
     cfg: LlmConfig,
     onBack: () -> Unit,
@@ -40,37 +61,42 @@ fun SearchScreen(
     onOpenSettings: () -> Unit,
 ) {
     var q by remember { mutableStateOf(initialQuery) }
-    var running by remember { mutableStateOf(false) }
-    var phase by remember { mutableStateOf(SearchPhase.LOCAL_ONLY) }
-    var result by remember { mutableStateOf<SearchResult?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var intent by remember { mutableStateOf<Intent?>(null) }
-    var index by remember { mutableStateOf<SmartSearch.Index?>(null) }
     val scope = rememberCoroutineScope()
 
     suspend fun runSearch(query: String) {
         if (query.isBlank()) return
-        running = true; error = null; result = null; intent = null
-        phase = if (cfg.ready) SearchPhase.UNDERSTAND else SearchPhase.LOCAL_ONLY
+        state.running = true
+        state.result = null
+        state.error = null
+        state.intent = null
+        state.query = query
+        state.phase = if (cfg.ready) SearchPhase.UNDERSTAND else SearchPhase.LOCAL_ONLY
         runCatching {
-            val idx = index ?: withContext(Dispatchers.Default) {
-                SmartSearch.Index(episodes).also { index = it }
+            val idx = state.index ?: withContext(Dispatchers.Default) {
+                SmartSearch.Index(episodes).also { state.index = it }
             }
             SmartSearch.run(
                 cfg, idx, query,
-                onPhase = { phase = it },
-                onIntent = { intent = it },
+                onPhase = { state.phase = it },
+                onIntent = { state.intent = it },
             )
         }.onSuccess {
-            result = it
-            if (it == null) error = "库内没有符合条件的节目"
+            state.result = it
+            state.finishedFor = query
+            if (it == null) state.error = "库内没有符合条件的节目"
         }.onFailure {
-            error = it.message ?: "检索失败"
+            state.error = it.message ?: "检索失败"
+            state.finishedFor = query
         }
-        running = false
+        state.running = false
     }
 
-    LaunchedEffect(initialQuery) { if (initialQuery.isNotBlank()) runSearch(initialQuery) }
+    // 只有「这个查询还没算过」才跑；从播放器返回时不会重复调用
+    LaunchedEffect(initialQuery) {
+        if (initialQuery.isNotBlank() && state.finishedFor != initialQuery) {
+            runSearch(initialQuery)
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(Tokens.Bg).safeDrawingPadding()) {
         Row(
@@ -81,7 +107,6 @@ fun SearchScreen(
             Text("智能点播", color = Tokens.OnBg, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
 
-        // 输入
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -99,7 +124,7 @@ fun SearchScreen(
             Spacer(Modifier.width(8.dp))
             Button(
                 onClick = { scope.launch { runSearch(q) } },
-                enabled = !running && q.isNotBlank(),
+                enabled = !state.running && q.isNotBlank(),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Tokens.Primary)
             ) { Text("听", color = Tokens.Bg, fontWeight = FontWeight.Bold) }
@@ -121,16 +146,15 @@ fun SearchScreen(
             }
         }
 
-        // 进度
-        if (running) {
+        if (state.running) {
             Spacer(Modifier.height(16.dp))
             Column(Modifier.padding(horizontal = 16.dp)) {
                 val steps = if (cfg.ready)
                     listOf(SearchPhase.UNDERSTAND, SearchPhase.RECALL, SearchPhase.RERANK)
                 else listOf(SearchPhase.LOCAL_ONLY)
                 steps.forEach { s ->
-                    val active = s == phase
-                    val done = steps.indexOf(s) < steps.indexOf(phase)
+                    val active = s == state.phase
+                    val done = steps.indexOf(s) < steps.indexOf(state.phase)
                     Row(Modifier.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (active) {
                             CircularProgressIndicator(
@@ -151,23 +175,23 @@ fun SearchScreen(
             }
         }
 
-        error?.let {
+        state.error?.let {
             Spacer(Modifier.height(16.dp))
             Text(it, color = Tokens.Accent, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp))
         }
 
-        result?.let { r ->
+        state.result?.let { r ->
             LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp)) {
                 item {
                     Spacer(Modifier.height(14.dp))
-                    if (r.usedLlm) {
-                        Text(
-                            if (r.confidence >= 0.6) "已为你找到" else "比较接近的一期",
-                            color = Tokens.Muted, fontSize = 11.sp
-                        )
-                    } else {
-                        Text("本地匹配结果", color = Tokens.Muted, fontSize = 11.sp)
-                    }
+                    Text(
+                        when {
+                            !r.usedLlm -> "本地匹配结果"
+                            r.confidence >= 0.6 -> "已为你找到"
+                            else -> "比较接近的一期"
+                        },
+                        color = Tokens.Muted, fontSize = 11.sp
+                    )
                     Spacer(Modifier.height(8.dp))
                 }
 
@@ -213,8 +237,7 @@ fun SearchScreen(
                     }
                 }
 
-                // 理解结果
-                intent?.let { it0 ->
+                state.intent?.let { it0 ->
                     val chips = buildList {
                         addAll(it0.topics)
                         addAll(it0.domain)
@@ -231,9 +254,7 @@ fun SearchScreen(
                             Spacer(Modifier.height(14.dp))
                             Text("理解成了", color = Tokens.Muted, fontSize = 11.sp)
                             Spacer(Modifier.height(6.dp))
-                            androidx.compose.foundation.lazy.LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 items(chips.size) { i ->
                                     AssistChip(onClick = {}, label = { Text(chips[i], fontSize = 10.sp) })
                                 }
@@ -250,7 +271,7 @@ fun SearchScreen(
                 }
 
                 item { SectionTitle("其它候选") }
-                items(r.candidates.drop(1).take(8), key = { "c" + it.first.id }) { (ep, score) ->
+                items(r.candidates.drop(1).take(8), key = { "c" + it.first.id }) { (ep, _) ->
                     EpisodeRow(ep) { onDetail(ep) }
                 }
                 item { Spacer(Modifier.height(24.dp)) }
@@ -271,12 +292,35 @@ fun AiSettingsPage(
     var base by remember { mutableStateOf(cfg.baseUrl) }
     var key by remember { mutableStateOf(cfg.apiKey) }
     var model by remember { mutableStateOf(cfg.model) }
+    var models by remember { mutableStateOf<List<String>>(emptyList()) }
+    var fetching by remember { mutableStateOf(false) }
+    var fetchError by remember { mutableStateOf<String?>(null) }
     var testState by remember { mutableStateOf<String?>(null) }
     var testing by remember { mutableStateOf(false) }
     var savedAt by remember { mutableStateOf(0L) }
+    var menuOpen by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val kb = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
+
+    // Key 填完自动拉模型列表（防抖 700ms）
+    LaunchedEffect(base, key) {
+        if (key.isBlank()) {
+            models = emptyList()
+            fetchError = null
+            return@LaunchedEffect
+        }
+        delay(700)
+        fetching = true
+        fetchError = null
+        runCatching { Llm.models(LlmConfig(base, key, model)) }
+            .onSuccess { list ->
+                models = list
+                if (list.isNotEmpty() && model !in list) model = list.first()
+            }
+            .onFailure { fetchError = it.message?.take(70) }
+        fetching = false
+    }
 
     fun dismissInput() {
         kb?.hide()
@@ -287,7 +331,7 @@ fun AiSettingsPage(
         Column(
             Modifier.fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .imePadding()                 // 键盘弹起时把按钮顶上来
+                .imePadding()
                 .padding(horizontal = 20.dp)
         ) {
             Spacer(Modifier.height(8.dp))
@@ -301,15 +345,92 @@ fun AiSettingsPage(
             Field("接口地址", base, "https://api.deepseek.com") { base = it }
             Spacer(Modifier.height(12.dp))
             Field("API Key", key, "sk-…", password = true) { key = it }
-            Spacer(Modifier.height(12.dp))
-            Field("模型", model, "deepseek-chat") { model = it }
 
+            // 模型：填了 Key 就从接口拉，点一下选
+            Spacer(Modifier.height(12.dp))
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("模型", color = Tokens.Muted, fontSize = 11.sp)
+                    Spacer(Modifier.width(8.dp))
+                    if (fetching) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(11.dp), strokeWidth = 1.5.dp, color = Tokens.Primary
+                        )
+                    } else if (models.isNotEmpty()) {
+                        Text("${models.size} 个可选", color = Tokens.Primary, fontSize = 10.sp)
+                    } else if (fetchError != null) {
+                        Text("拉取失败", color = Tokens.Accent, fontSize = 10.sp)
+                    }
+                }
+                Spacer(Modifier.height(5.dp))
+                Box {
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Tokens.Surface)
+                            .clickable(enabled = models.isNotEmpty()) {
+                                dismissInput()          // 先收键盘，否则看不到/点不到下面的列表
+                                menuOpen = !menuOpen
+                            }
+                            .padding(horizontal = 14.dp, vertical = 15.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            model.ifBlank { "填写 Key 后自动获取" },
+                            color = if (model.isBlank()) Tokens.Muted else Tokens.OnBg,
+                            fontSize = 14.sp, modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            if (models.isNotEmpty()) {
+                                if (menuOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore
+                            } else Icons.Filled.Refresh,
+                            null, tint = Tokens.Muted
+                        )
+                    }
+                }
+                // 页面内展开，不用弹窗
+                if (menuOpen && models.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                            .background(Tokens.Surface).padding(vertical = 4.dp)
+                    ) {
+                        models.forEach { m ->
+                            Row(
+                                Modifier.fillMaxWidth().clickable {
+                                    model = m
+                                    menuOpen = false
+                                    dismissInput()
+                                }.padding(horizontal = 14.dp, vertical = 15.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    m,
+                                    color = if (m == model) Tokens.Primary else Tokens.OnBg,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (m == model) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (m == model) {
+                                    Icon(Icons.Filled.Check, null, tint = Tokens.Primary,
+                                        modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+                fetchError?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(it, color = Tokens.Accent, fontSize = 10.sp, maxLines = 2)
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
                     onClick = {
                         dismissInput()
-                        val c = LlmConfig(base, key, model)
-                        onSave(c)
+                        onSave(LlmConfig(base, key, model))
                         testState = null
                         savedAt = System.currentTimeMillis()
                         android.widget.Toast.makeText(ctx, "已保存", android.widget.Toast.LENGTH_SHORT).show()
@@ -338,7 +459,7 @@ fun AiSettingsPage(
                 ) { Text(if (testing) "测试中…" else "测试连接", color = Tokens.Primary, fontSize = 13.sp) }
             }
 
-            // 状态放在按钮下方：按钮位置固定，不会因为提示出现而移位
+            // 状态在按钮下方：按钮位置固定，不会因为提示出现而移位
             Spacer(Modifier.height(14.dp))
             val statusText = when {
                 testing -> "正在连接…"
@@ -378,8 +499,8 @@ fun AiSettingsPage(
 
             Spacer(Modifier.height(20.dp))
             Text(
-                "提示：模型要支持 JSON 输出（response_format=json_object）。" +
-                    "如果选的是推理模型，单次解析会慢几秒。",
+                "模型列表由接口返回，换服务商会自动变。" +
+                    "模型需要支持 JSON 输出（response_format=json_object）。",
                 color = Tokens.Muted, fontSize = 11.sp, lineHeight = 18.sp
             )
             Spacer(Modifier.height(28.dp))
@@ -404,7 +525,7 @@ private fun Field(
             placeholder = { Text(hint, color = Tokens.Muted, fontSize = 12.sp) },
             singleLine = true,
             shape = RoundedCornerShape(12.dp),
-            visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+            visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
             keyboardOptions = if (password) KeyboardOptions(keyboardType = KeyboardType.Password)
             else KeyboardOptions.Default,
             modifier = Modifier.fillMaxWidth()
