@@ -318,12 +318,12 @@ fun SettingsPage(sleepMin: Int, onSleep: (Int) -> Unit, onBack: () -> Unit) {
                 }
             }
             item {
-                SectionTitle("尚未实现")
+                SectionTitle("已知限制")
                 CardBox(Modifier.fillMaxWidth()) {
-                    listOf("跳过片头（每期固定开场白）", "倍速播放", "响度归一化开关（正增益）").forEach {
-                        Text("· $it", color = Tokens.Muted, fontSize = 12.sp,
-                            modifier = Modifier.padding(vertical = 3.dp))
-                    }
+                    Text(
+                        "偏轻的节目最多只能调到原音量（系统不允许应用放大），所以正增益不生效。",
+                        color = Tokens.Muted, fontSize = 11.sp
+                    )
                 }
             }
             item { Spacer(Modifier.height(28.dp)) }

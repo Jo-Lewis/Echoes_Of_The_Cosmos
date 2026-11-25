@@ -45,7 +45,10 @@ data class ScenePrefs(
     val levelMax: Int = 3,
     val contentTypes: List<String> = emptyList(),
     val sleepOnly: Boolean = false,
-    val fadeMin: Int = 0,
+    val fadeMin: Int = 0,             // 旧语义：在最后 N 分钟淡出
+    val fadeStartMin: Int = 0,        // 新语义：从第 N 分钟开始淡出（0=不用）
+    val fadeLenMin: Int = 0,          // 淡出持续多少分钟
+    val idleStopMin: Int = 0,         // 淡到 0 后，无操作多少分钟就暂停（0=不停）
     val countMode: String = "auto",   // auto / one / many
     val builtin: Boolean = true,
 ) {
@@ -58,6 +61,8 @@ data class ScenePrefs(
         .put("loadMax", loadMax).put("levelMax", levelMax)
         .put("contentTypes", JSONArray(contentTypes))
         .put("sleepOnly", sleepOnly).put("fadeMin", fadeMin)
+        .put("fadeStartMin", fadeStartMin).put("fadeLenMin", fadeLenMin)
+        .put("idleStopMin", idleStopMin)
         .put("countMode", countMode).put("builtin", builtin)
 
     companion object {
@@ -83,6 +88,9 @@ data class ScenePrefs(
                 contentTypes = list("contentTypes"),
                 sleepOnly = o.optBoolean("sleepOnly", false),
                 fadeMin = o.optInt("fadeMin", 0),
+                fadeStartMin = o.optInt("fadeStartMin", 0),
+                fadeLenMin = o.optInt("fadeLenMin", 0),
+                idleStopMin = o.optInt("idleStopMin", 0),
                 countMode = o.optString("countMode").ifBlank { "auto" },
                 builtin = o.optBoolean("builtin", true),
             )
@@ -102,10 +110,12 @@ object Scenes {
     fun defaults(): List<ScenePrefs> = listOf(
         ScenePrefs(
             id = "sleep", name = "睡前", emoji = "🛌",
-            perMin = 6, perMax = 20, totalMin = 20,
+            perMin = 5, perMax = 60, totalMin = 50,
             tones = listOf("平静", "怀旧", "好奇"),
             humorMin = 0, humorMax = 4, loadMax = 2, levelMax = 3,
-            sleepOnly = true, fadeMin = 8, countMode = "auto"
+            sleepOnly = true, fadeMin = 0,
+            fadeStartMin = 15, fadeLenMin = 10, idleStopMin = 5,
+            countMode = "auto"
         ),
         ScenePrefs(
             id = "commute", name = "通勤", emoji = "🚇",
@@ -150,6 +160,35 @@ object Scenes {
     // ---------------- 读写 ----------------
 
     fun load(ctx: Context): List<ScenePrefs> {
+        // 旧版睡眠模式是「结尾 N 分钟淡出」，新版改成「第 N 分钟起淡出 + 静音后自动停」。
+        // 只迁移一次，记在 scene_ver 里。
+        val prefs0 = ctx.getSharedPreferences("echoes", 0)
+        if (prefs0.getInt("scene_ver", 1) < 2) {
+            val raw0 = prefs0.getString("scene_prefs", null)
+            if (raw0 != null) {
+                runCatching {
+                    val arr = JSONArray(raw0)
+                    val out = JSONArray()
+                    for (k in 0 until arr.length()) {
+                        val o = arr.getJSONObject(k)
+                        if (o.optString("id") == "sleep") {
+                            o.put("fadeMin", 0)
+                            o.put("fadeStartMin", 15)
+                            o.put("fadeLenMin", 10)
+                            o.put("idleStopMin", 5)
+                            o.put("totalMin", 50)
+                            o.put("perMax", 60)
+                        }
+                        out.put(o)
+                    }
+                    prefs0.edit().putString("scene_prefs", out.toString())
+                        .putInt("scene_ver", 2).apply()
+                }
+            } else {
+                prefs0.edit().putInt("scene_ver", 2).apply()
+            }
+        }
+
         val raw = ctx.getSharedPreferences("echoes", 0).getString("scene_prefs", "").orEmpty()
         val stored = runCatching {
             val arr = JSONArray(raw)
@@ -198,7 +237,7 @@ object Scenes {
         val yearCeil = if (p.yearMax > 0) p.yearMax else 9999
         val recent = lastPicked(ctx, p.id)
 
-        val pool = eps.asSequence()
+        val scored = eps.asSequence()
             .filter { it.durationSec in (p.perMin * 60)..(p.perMax * 60) }
             .filter { it.year >= yearFloor && it.year <= yearCeil }
             .filter { it.level <= p.levelMax }
@@ -209,31 +248,40 @@ object Scenes {
             .filter { !p.sleepOnly || it.sleepFriendly || quiet(it) }
             .map { it to score(p, it) }
             .sortedByDescending { it.second }
-            .map { it.first }
             .toList()
 
-        if (pool.isEmpty()) return emptyList()
+        if (scored.isEmpty()) return emptyList()
 
-        // 打散：前 40 名里随机取，天然不会每天一样
-        val head = pool.take(40).shuffled(Random.Default)
-        val tail = pool.drop(40)
+        // 前 80 名里按分数加权随机：既有质量保证，又不会每次都同一批
+        val head = scored.take(80)
+        val fresh = head.filter { it.first.id !in recent }.ifEmpty { head }
+        val first = weightedPick(fresh) ?: return emptyList()
 
         val picked = ArrayList<Episode>()
         val usedTopics = HashSet<String>()
         var sum = 0
 
-        // 先挑一期：跳过上次用过的
-        fun takeOne(): Episode? {
-            val cand = (head + tail).firstOrNull { e ->
-                e.id !in recent && picked.none { it.id == e.id }
-            } ?: head.firstOrNull { e -> picked.none { it.id == e.id } } ?: return null
-            return cand
+        // ---- 系列优先：能整条放下就整条，放不下就从第一期开始 ----
+        val series = if (first.first.inCollection) {
+            eps.filter { it.collection == first.first.collection }.sortedBy { it.collSeq }
+        } else emptyList()
+
+        if (series.size >= 2) {
+            val seriesTotal = series.sumOf { it.durationSec }
+            val targetSec = p.totalMin * 60
+            if (seriesTotal <= targetSec * 1.6 || p.countMode == "one") {
+                picked.addAll(series)
+                sum = seriesTotal
+            } else {
+                picked.add(series.first())
+                sum = series.first().durationSec
+            }
+        } else {
+            picked.add(first.first)
+            sum = first.first.durationSec
         }
+        picked.forEach { usedTopics.addAll(it.topics) }
 
-        val first = takeOne() ?: return emptyList()
-        picked.add(first); usedTopics.addAll(first.topics); sum += first.durationSec
-
-        // 一期就够？目标时长的 70%~140% 之内就直接收工
         val enough = sum >= p.totalMin * 60 * 0.7 && sum <= p.totalMin * 60 * 1.4
         if (p.countMode == "one") {
             remember(ctx, p.id, picked)
@@ -244,17 +292,33 @@ object Scenes {
             return picked
         }
 
-        // 否则继续凑
-        for (e in head + tail) {
+        // ---- 继续凑时长：优先没听过的，实在没有了再回退到听过的 ----
+        val all = head.map { it.first } + scored.drop(80).map { it.first }
+        val rest = all.filter { it.id !in recent }.ifEmpty { all }
+        for (e in rest) {
             if (sum >= p.totalMin * 60) break
-            if (picked.size >= 4) break
+            if (picked.size >= 8) break
             if (picked.any { it.id == e.id }) continue
+            if (e.inCollection && picked.any { it.collection == e.collection }) continue
             if (picked.isNotEmpty() && e.topics.count { it in usedTopics } >= 2) continue
             picked.add(e); usedTopics.addAll(e.topics); sum += e.durationSec
         }
 
         remember(ctx, p.id, picked)
         return picked
+    }
+
+    /** 按分数加权随机取一个，分数越高越可能被选中，但不是必然。 */
+    private fun weightedPick(list: List<Pair<Episode, Int>>): Pair<Episode, Int>? {
+        if (list.isEmpty()) return null
+        val weights = list.map { (it.second.coerceAtLeast(1)).toDouble() }
+        val total = weights.sum()
+        var r = Random.Default.nextDouble() * total
+        for (i in list.indices) {
+            r -= weights[i]
+            if (r <= 0) return list[i]
+        }
+        return list.last()
     }
 
     private fun quiet(e: Episode) = e.load <= 2 && e.humor <= 3 &&
@@ -278,10 +342,14 @@ object Scenes {
         ctx.getSharedPreferences("echoes", 0)
             .getStringSet(recentKey(id), emptySet())!!.toSet()
 
+    /** 记住最近选过的期；累积到 120 期，避免翻来覆去就那几期。 */
     private fun remember(ctx: Context, id: String, picked: List<Episode>) {
-        ctx.getSharedPreferences("echoes", 0).edit()
-            .putStringSet(recentKey(id), picked.map { it.id }.toSet())
-            .apply()
+        val prefs = ctx.getSharedPreferences("echoes", 0)
+        val old = prefs.getStringSet(recentKey(id), emptySet()) ?: emptySet()
+        val merged = LinkedHashSet(old)
+        picked.forEach { merged.add(it.id) }
+        while (merged.size > 120) merged.remove(merged.first())
+        prefs.edit().putStringSet(recentKey(id), merged).apply()
     }
 
     fun describe(p: ScenePrefs): String {
@@ -293,7 +361,11 @@ object Scenes {
                 if (p.yearMax > 0) "${p.yearMin}-${p.yearMax} 年" else "${p.yearMin} 年后"
             )
         }
-        if (p.fadeMin > 0) parts.add("末 ${p.fadeMin} 分钟淡出")
+        if (p.fadeStartMin > 0 && p.fadeLenMin > 0) {
+            parts.add("第 ${p.fadeStartMin} 分钟起淡出 ${p.fadeLenMin} 分钟")
+        } else if (p.fadeMin > 0) {
+            parts.add("末 ${p.fadeMin} 分钟淡出")
+        }
         return parts.joinToString(" · ")
     }
 }

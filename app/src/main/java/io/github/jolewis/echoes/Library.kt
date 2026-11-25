@@ -34,9 +34,15 @@ data class Episode(
     val blocks: File?,
     val transcript: File?,
     val dir: File,
+    /** 系列名（标题里的「普京传（6）」→ 普京传），非系列为 null */
+    val collection: String? = null,
+    val collSeq: Int = 0,
+    val collSize: Int = 0,
 ) {
     val minutes: Int get() = (durationSec / 60).coerceAtLeast(1)
     val audio: File get() = audioFiles.first()
+    val inCollection: Boolean get() = !collection.isNullOrBlank() && collSize > 1
+
     val haystack: String by lazy {
         "$title ${topics.joinToString(" ")} ${keywords.joinToString(" ")} $oneLine"
     }
@@ -159,6 +165,7 @@ object Library {
 
         val coverName = str(assets, "cover")
         val gain = (tech?.optDouble("gain_db", 0.0) ?: 0.0).toFloat()
+        val coll = m.optJSONObject("collection")
 
         return Episode(
             id = m.optString("id"),
@@ -187,6 +194,9 @@ object Library {
             blocks = if (blocksName.isEmpty()) null else File(dir, blocksName).takeIf { it.isFile },
             transcript = if (mdName.isEmpty()) null else File(dir, mdName).takeIf { it.isFile },
             dir = dir,
+            collection = str(coll, "name").takeIf { it.isNotBlank() },
+            collSeq = coll?.optInt("seq", 0) ?: 0,
+            collSize = coll?.optInt("size", 0) ?: 0,
         )
     }
 
@@ -206,6 +216,7 @@ object Library {
             .put("id", e.id).put("ti", e.title).put("dt", e.date).put("y", e.year)
             .put("du", e.durationSec).put("ol", e.oneLine).put("sm", e.summary)
             .put("bf", e.bestFor).put("se", e.series ?: "")
+            .put("cn", e.collection ?: "").put("cs", e.collSeq).put("cz", e.collSize)
             .put("g", e.gainDb.toDouble()).put("ct", e.contentType)
             .put("lv", e.level).put("ld", e.load).put("hu", e.humor).put("to", e.tone)
             .put("tp", org.json.JSONArray(e.topics)).put("kw", org.json.JSONArray(e.keywords))
@@ -245,6 +256,8 @@ object Library {
             year = o.optInt("y"), durationSec = o.optInt("du"),
             oneLine = o.optString("ol"), summary = o.optString("sm"),
             bestFor = o.optString("bf"), series = o.optString("se").takeIf { it.isNotBlank() },
+            collection = o.optString("cn").takeIf { it.isNotBlank() },
+            collSeq = o.optInt("cs"), collSize = o.optInt("cz"),
             gainDb = o.optDouble("g", 0.0).toFloat(),
             contentType = o.optString("ct"), level = o.optInt("lv", 2),
             load = o.optInt("ld", 3), humor = o.optInt("hu", 3), tone = o.optString("to"),

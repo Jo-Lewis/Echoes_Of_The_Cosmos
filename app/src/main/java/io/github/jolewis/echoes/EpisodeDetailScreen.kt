@@ -36,6 +36,7 @@ fun EpisodeDetailScreen(
     onToggleFavorite: () -> Unit,
     onOpen: (Episode) -> Unit,
     onEnqueue: (Episode) -> Unit = {},
+    onPlayCollection: (String) -> Unit = {},
 ) {
     val paragraphs = remember(ep.id) { previewParagraphs(ep, 3) }
     val related = remember(ep.id, all) { relatedTo(ep, all, 4) }
@@ -122,6 +123,25 @@ fun EpisodeDetailScreen(
                         modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("加入队列", color = Tokens.Primary, fontSize = 13.sp)
+                }
+                if (ep.inCollection) {
+                    Spacer(Modifier.height(8.dp))
+                    CardBox(Modifier.fillMaxWidth()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.LibraryMusic, null, tint = Tokens.Primary,
+                                modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("系列 · " + ep.collection, color = Tokens.OnBg,
+                                    fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Text("第 " + ep.collSeq + " 期 / 共 " + ep.collSize + " 期",
+                                    color = Tokens.Muted, fontSize = 11.sp)
+                            }
+                            TextButton(onClick = { onPlayCollection(ep.collection ?: "") }) {
+                                Text("按顺序听", color = Tokens.Primary, fontSize = 12.sp)
+                            }
+                        }
+                    }
                 }
                 Spacer(Modifier.height(10.dp))
                 Completeness(ep)

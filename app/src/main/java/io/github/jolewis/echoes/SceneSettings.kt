@@ -17,6 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -152,6 +154,38 @@ fun SceneEditPage(
                 modifier = Modifier.padding(start = 2.dp, top = 2.dp)
             )
 
+            Spacer(Modifier.height(18.dp))
+            Text("淡出", color = Tokens.Muted, fontSize = 11.sp)
+            Spacer(Modifier.height(4.dp))
+            SingleSlider(
+                label = "从第几分钟开始淡出",
+                lo = 0f, hi = 90f, step = 5,
+                value = p.fadeStartMin.toFloat(),
+                fmt = { if (it == 0) "不淡出" else "第 $it 分钟" }
+            ) { v -> p = p.copy(fadeStartMin = v.toInt()) }
+
+            Spacer(Modifier.height(10.dp))
+            SingleSlider(
+                label = "淡出持续多久",
+                lo = 5f, hi = 30f, step = 5,
+                value = p.fadeLenMin.coerceAtLeast(5).toFloat(),
+                fmt = { "$it 分钟" }
+            ) { v -> p = p.copy(fadeLenMin = v.toInt()) }
+
+            Spacer(Modifier.height(10.dp))
+            SingleSlider(
+                label = "静音后多久自动停",
+                lo = 0f, hi = 30f, step = 5,
+                value = p.idleStopMin.toFloat(),
+                fmt = { if (it == 0) "不停" else "$it 分钟无操作" }
+            ) { v -> p = p.copy(idleStopMin = v.toInt()) }
+
+            Text(
+                "到 0 之后按音量键会重新出声，再从头计一轮。",
+                color = Tokens.Muted, fontSize = 10.sp
+            )
+
+            Spacer(Modifier.height(4.dp))
             MultiChips("风格（可多选，不选=不限）", Scenes.tones, p.tones) { t ->
                 p = p.copy(tones = if (t in p.tones) p.tones - t else p.tones + t)
             }
@@ -219,9 +253,15 @@ private fun RangeRow(
         "${fmt(value.start.toInt())} - ${fmt(value.endInclusive.toInt())}",
         color = Tokens.OnBg, fontSize = 13.sp, fontWeight = FontWeight.Medium
     )
+    val haptic = LocalHapticFeedback.current
+    var tick by remember { mutableStateOf(-1) }
     RangeSlider(
         value = value,
-        onValueChange = onChange,
+        onValueChange = { v ->
+            onChange(v)
+            val t = v.start.toInt() / 3
+            if (t != tick) { tick = t; haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+        },
         valueRange = lo..hi,
         steps = if (step > 1) ((hi - lo).toInt() / step) - 1 else 0,
         colors = SliderDefaults.colors(
@@ -244,9 +284,15 @@ private fun SingleSlider(
 ) {
     Text(label, color = Tokens.Muted, fontSize = 11.sp)
     Text(fmt(value.toInt()), color = Tokens.OnBg, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    val haptic = LocalHapticFeedback.current
+    var tick by remember { mutableStateOf(-1) }
     Slider(
         value = value,
-        onValueChange = onChange,
+        onValueChange = { v ->
+            onChange(v)
+            val t = v.toInt() / 3
+            if (t != tick) { tick = t; haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+        },
         valueRange = lo..hi,
         steps = if (step > 1) ((hi - lo).toInt() / step) - 1 else 0,
         colors = SliderDefaults.colors(

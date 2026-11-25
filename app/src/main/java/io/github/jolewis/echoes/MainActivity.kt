@@ -22,6 +22,20 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+
+    /** 音量键回调：睡眠模式淡到 0 后，按音量键要能重新出声。 */
+    var volumeKeyHandler: (() -> Unit)? = null
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.action == android.view.KeyEvent.ACTION_DOWN &&
+            (event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP ||
+                event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN)
+        ) {
+            runCatching { volumeKeyHandler?.invoke() }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installCrashLogger()
@@ -74,7 +88,46 @@ fun EchoesApp(activity: ComponentActivity) {
     var sceneEdit by remember { mutableStateOf<ScenePrefs?>(null) }
     var sceneIsNew by remember { mutableStateOf(false) }
     var sceneRemainMin by remember { mutableStateOf(0) }
+    // 场景开始时间（elapsedRealtime），用于「第 N 分钟开始淡出」
+    var sceneStartedAt by remember { mutableStateOf(0L) }
+    // 淡到 0 的时刻，用于「N 分钟无操作就停」
+    var sceneZeroAt by remember { mutableStateOf(0L) }
     var favs by remember { mutableStateOf(prefs.getStringSet("favs", emptySet())!!.toSet()) }
+
+    // 唤醒：重置淡出计时，音量回到 1
+    fun wakeScene() {
+        if (scene == null) return
+        sceneStartedAt = android.os.SystemClock.elapsedRealtime()
+        sceneZeroAt = 0L
+        Volume.setFadeScene(box.controller, 1f)
+    }
+
+    DisposableEffect(Unit) {
+        val act = activity as? MainActivity
+        act?.volumeKeyHandler = { wakeScene() }
+        onDispose { act?.volumeKeyHandler = null }
+    }
+
+    // 屏幕关掉时 Activity 拿不到按键，用系统音量变化兜底
+    LaunchedEffect(scene?.id) {
+        val sc = scene ?: return@LaunchedEffect
+        val am = activity.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+        var lastVol = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+        val obs = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                val v = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                if (v != lastVol) {
+                    lastVol = v
+                    wakeScene()
+                }
+            }
+        }
+        activity.contentResolver.registerContentObserver(
+            android.provider.Settings.System.CONTENT_URI, true, obs
+        )
+        kotlinx.coroutines.awaitCancellation()
+        activity.contentResolver.unregisterContentObserver(obs)
+    }
 
     LaunchedEffect(Unit) {
         val cached = withContext(Dispatchers.IO) { Library.loadCached(activity) }
@@ -111,7 +164,10 @@ fun EchoesApp(activity: ComponentActivity) {
                 prefs.edit().putLong("pos_" + ep.id, c.currentPosition).apply()
             } else tracker.onIdle()
 
-            // 情景模式：按队列剩余时长做线性淡出，播完自动停
+            // 情景模式：三种音量策略
+            //  1) 新语义：开始后第 fadeStartMin 分钟起淡出，fadeLenMin 分钟内到 0
+            //  2) 旧语义：队列最后 fadeMin 分钟淡出
+            //  3) 都没有：不淡出，播完即停
             val sc = scene
             if (sc != null) {
                 var remain = 0L
@@ -121,7 +177,39 @@ fun EchoesApp(activity: ComponentActivity) {
                 }
                 remain = (remain - posMs).coerceAtLeast(0L)
                 sceneRemainMin = (remain / 60_000L).toInt()
-                if (sc.fadeMin > 0) {
+
+                if (sc.fadeStartMin > 0 && sc.fadeLenMin > 0) {
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (sceneStartedAt == 0L) sceneStartedAt = now
+                    val elapsedMin = (now - sceneStartedAt) / 60_000f
+                    val vol = when {
+                        elapsedMin <= sc.fadeStartMin -> 1f
+                        elapsedMin >= sc.fadeStartMin + sc.fadeLenMin -> 0f
+                        else -> 1f - (elapsedMin - sc.fadeStartMin) / sc.fadeLenMin
+                    }
+                    Volume.setFadeScene(box.controller, vol)
+                    if (vol <= 0f) {
+                        if (sceneZeroAt == 0L) sceneZeroAt = now
+                        if (sc.idleStopMin > 0 && now - sceneZeroAt >= sc.idleStopMin * 60_000L) {
+                            box.controller?.pause()
+                            scene = null
+                            sceneZeroAt = 0L
+                            Volume.setFadeScene(box.controller, 1f)
+                            android.widget.Toast.makeText(
+                                activity, "已经安静 ${sc.idleStopMin} 分钟，先停在这里，晚安",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    } else {
+                        sceneZeroAt = 0L
+                    }
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d(
+                            "echoes",
+                            "scene=" + sc.name + " elapsed=" + elapsedMin.toInt() + "min vol=" + Volume.effective
+                        )
+                    }
+                } else if (sc.fadeMin > 0) {
                     val fadeMs = sc.fadeMin * 60_000L
                     Volume.setFadeScene(box.controller, (remain.toFloat() / fadeMs).coerceIn(0f, 1f))
                     if (BuildConfig.DEBUG) {
@@ -131,10 +219,12 @@ fun EchoesApp(activity: ComponentActivity) {
                         )
                     }
                 }
-                if (remain <= 0L) {
+
+                if (remain <= 0L && queue.index >= queue.ids.size - 1) {
                     box.controller?.pause()
                     Volume.setFadeScene(box.controller, 1f)
                     scene = null
+                    sceneZeroAt = 0L
                     android.widget.Toast.makeText(activity, "${sc.name}模式结束，晚安", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
@@ -263,6 +353,8 @@ fun EchoesApp(activity: ComponentActivity) {
             ).show()
         } else {
             scene = sc
+            sceneStartedAt = android.os.SystemClock.elapsedRealtime()
+            sceneZeroAt = 0L
             Volume.setFadeScene(box.controller, 1f)
             playAll(list)
             val mins = list.sumOf { it.durationSec } / 60
@@ -346,11 +438,34 @@ fun EchoesApp(activity: ComponentActivity) {
             onBack = { detail = null },
             onPlay = { startPlay(d) },
             onToggleFavorite = {
-                favs = if (favs.contains(d.id)) favs - d.id else favs + d.id
+                val on = !favs.contains(d.id)
+                favs = if (on) favs + d.id else favs - d.id
                 prefs.edit().putStringSet("favs", favs).apply()
+                android.widget.Toast.makeText(
+                    activity, if (on) "已收藏" else "已取消收藏", android.widget.Toast.LENGTH_SHORT
+                ).show()
             },
             onOpen = { detail = it },
-            onEnqueue = { queue.enqueue(it.id); QueueState.save(activity, queue) },
+            onPlayCollection = { name ->
+                val list = episodes.filter { it.collection == name }.sortedBy { it.collSeq }
+                if (list.isNotEmpty()) {
+                    playAll(list)
+                    android.widget.Toast.makeText(
+                        activity, "按顺序播放「" + name + "」共 " + list.size + " 期",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            },
+            onEnqueue = {
+                val before = queue.ids.size
+                queue.enqueue(it.id)
+                QueueState.save(activity, queue)
+                android.widget.Toast.makeText(
+                    activity,
+                    if (queue.ids.size > before) "已加入队列" else "已经在队列里了",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            },
         )
         return
     }
