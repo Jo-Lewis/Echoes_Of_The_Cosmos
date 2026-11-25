@@ -169,19 +169,72 @@ fun StatsPage(episodes: List<Episode>, recs: List<ListenRec>, onBack: () -> Unit
                 item { EmptyHint("还没有收听记录，听一期就有了") }
             } else {
                 item {
-                    SectionTitle("近 14 天")
-                    Row(
-                        Modifier.fillMaxWidth().height(64.dp),
-                        verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        days.forEach { (_, sec) ->
-                            val h = (sec.toFloat() / maxDay * 58f).coerceAtLeast(if (sec > 0) 4f else 2f)
-                            Box(
-                                Modifier.weight(1f).height(h.dp).clip(RoundedCornerShape(3.dp))
-                                    .background(if (sec > 0) Tokens.Primary else Tokens.Elevated)
+                    val grid = remember(recs) { heatGrid(recs, 12) }
+                    val peak = grid.flatten().maxOfOrNull { it.second } ?: 0L
+                    SectionTitle("近 12 周")
+                    CardBox(Modifier.fillMaxWidth()) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            grid.forEach { week ->
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    week.forEach { (_, sec) ->
+                                        val a = when {
+                                            sec <= 0L -> 0f
+                                            peak <= 0L -> 0.35f
+                                            else -> (0.25f + 0.75f * (sec.toFloat() / peak)).coerceIn(0.25f, 1f)
+                                        }
+                                        Box(
+                                            Modifier.fillMaxWidth().aspectRatio(1f)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(
+                                                    if (sec <= 0L) Tokens.Elevated
+                                                    else Tokens.Primary.copy(alpha = a)
+                                                )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("少", color = Tokens.Muted, fontSize = 9.sp)
+                            Spacer(Modifier.width(4.dp))
+                            listOf(0f, 0.3f, 0.55f, 0.8f, 1f).forEach { a ->
+                                Box(
+                                    Modifier.size(10.dp).clip(RoundedCornerShape(2.dp))
+                                        .background(
+                                            if (a == 0f) Tokens.Elevated
+                                            else Tokens.Primary.copy(alpha = a)
+                                        )
+                                )
+                                Spacer(Modifier.width(3.dp))
+                            }
+                            Text("多", color = Tokens.Muted, fontSize = 9.sp)
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                "最长的一天 " + fmtShort(peak),
+                                color = Tokens.Muted, fontSize = 9.sp
                             )
                         }
+                    }
+                }
+                item {
+                    val (thisWeek, lastWeek) = remember(recs) { weekCompare(recs) }
+                    SectionTitle("本周 vs 上周")
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StatCell("本周", fmtShort(thisWeek), Modifier.weight(1f))
+                        StatCell("上周", fmtShort(lastWeek), Modifier.weight(1f))
+                        StatCell(
+                            "变化",
+                            when {
+                                lastWeek <= 0L && thisWeek <= 0L -> "—"
+                                lastWeek <= 0L -> "新增"
+                                else -> {
+                                    val pct = ((thisWeek - lastWeek) * 100 / lastWeek)
+                                    (if (pct >= 0) "+" else "") + pct + "%"
+                                }
+                            },
+                            Modifier.weight(1f)
+                        )
                     }
                 }
                 item {
@@ -216,6 +269,40 @@ fun StatsPage(episodes: List<Episode>, recs: List<ListenRec>, onBack: () -> Unit
             item { Spacer(Modifier.height(28.dp)) }
         }
     }
+}
+
+/** 近 weeks 周的日历网格：每周 7 天，从周一开始，最后一周截止今天。 */
+private fun heatGrid(recs: List<ListenRec>, weeks: Int): List<List<Pair<String, Long>>> {
+    val byDay = recs.groupBy { it.dateKey }.mapValues { e -> e.value.sumOf { it.sec } }
+    val cal = java.util.Calendar.getInstance()
+    while (cal.get(java.util.Calendar.DAY_OF_WEEK) != java.util.Calendar.MONDAY) {
+        cal.add(java.util.Calendar.DAY_OF_MONTH, -1)
+    }
+    cal.add(java.util.Calendar.DAY_OF_MONTH, -(weeks - 1) * 7)
+    val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+    return (0 until weeks).map {
+        (0 until 7).map {
+            val key = fmt.format(cal.time)
+            cal.add(java.util.Calendar.DAY_OF_MONTH, 1)
+            key to (byDay[key] ?: 0L)
+        }
+    }
+}
+
+/** 本周（含今天）与上周的收听时长。 */
+private fun weekCompare(recs: List<ListenRec>): Pair<Long, Long> {
+    val byDay = recs.groupBy { it.dateKey }.mapValues { e -> e.value.sumOf { it.sec } }
+    val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+    val cal = java.util.Calendar.getInstance()
+    var thisWeek = 0L
+    var lastWeek = 0L
+    repeat(14) {
+        val k = fmt.format(cal.time)
+        val v = byDay[k] ?: 0L
+        if (it < 7) thisWeek += v else lastWeek += v
+        cal.add(java.util.Calendar.DAY_OF_MONTH, -1)
+    }
+    return thisWeek to lastWeek
 }
 
 @Composable
