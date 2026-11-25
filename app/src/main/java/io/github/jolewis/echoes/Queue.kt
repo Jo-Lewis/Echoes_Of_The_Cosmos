@@ -64,7 +64,7 @@ class QueueState {
             val raw = p.getString(K_IDS, "").orEmpty()
             val q = QueueState()
             q.ids = raw.split(SEP).filter { it.isNotBlank() }
-            q.index = p.getInt(K_IDX, if (q.ids.isEmpty()) -1 else 0)
+            q.index = p.intOf(K_IDX, if (q.ids.isEmpty()) -1 else 0)
             return q
         }
 

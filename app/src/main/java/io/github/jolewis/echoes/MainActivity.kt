@@ -257,7 +257,7 @@ fun EchoesApp(activity: ComponentActivity) {
         box.connect {
             val loadedId = box.controller?.currentMediaItem?.mediaId?.substringBefore('#')
             if (loadedId != ep.id) {
-                val saved = prefs.getLong("pos_" + ep.id, 0L)
+                val saved = prefs.longOf("pos_" + ep.id, 0L)
                 val durMs = ep.durationSec * 1000L
                 val resume = if (saved > 5000L && saved < durMs - 10000L) saved else 0L
                 box.loadEpisode(ep, resume, autoPlay = false)
@@ -298,7 +298,7 @@ fun EchoesApp(activity: ComponentActivity) {
     val ensureLoaded: (Episode) -> Unit = { ep ->
         val playingId = box.controller?.currentMediaItem?.mediaId?.substringBefore('#')
         if (playingId != ep.id) {
-            val saved = prefs.getLong("pos_" + ep.id, 0L)
+            val saved = prefs.longOf("pos_" + ep.id, 0L)
             val durMs = ep.durationSec * 1000L
             val resume = if (saved > 5000L && saved < durMs - 10000L) saved else 0L
             box.playEpisode(ep, resume)
@@ -451,7 +451,7 @@ fun EchoesApp(activity: ComponentActivity) {
     detail?.let { d ->
         EpisodeDetailScreen(
             ep = d, all = episodes,
-            progressSec = (prefs.getLong("pos_" + d.id, 0L)) / 1000,
+            progressSec = (prefs.longOf("pos_" + d.id, 0L)) / 1000,
             favorite = favs.contains(d.id),
             onBack = { detail = null },
             onPlay = { startPlay(d) },

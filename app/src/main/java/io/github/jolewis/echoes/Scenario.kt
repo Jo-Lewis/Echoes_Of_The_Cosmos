@@ -164,7 +164,7 @@ object Scenes {
         // 旧版睡眠模式是「结尾 N 分钟淡出」，新版改成「第 N 分钟起淡出 + 静音后自动停」。
         // 只迁移一次，记在 scene_ver 里。
         val prefs0 = ctx.getSharedPreferences("echoes", 0)
-        if (prefs0.getInt("scene_ver", 1) < 2) {
+        if (prefs0.intOf("scene_ver", 1) < 2) {
             val raw0 = prefs0.getString("scene_prefs", null)
             if (raw0 != null) {
                 runCatching {

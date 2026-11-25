@@ -67,8 +67,9 @@ object Profile {
         o.keys().forEach { k ->
             if (k.startsWith(SECRET_PREFIX)) return@forEach
             when (val v = o.opt(k)) {
-                is Long -> e.putLong(k, v)
-                is Int -> e.putLong(k, v.toLong())
+                is Int -> e.putInt(k, v)
+                is Long -> if (v in Int.MIN_VALUE..Int.MAX_VALUE) e.putInt(k, v.toInt()) else e.putLong(k, v)
+                is Double -> e.putInt(k, v.toInt())
                 is String -> e.putString(k, v)
                 is JSONArray -> e.putStringSet(
                     k, (0 until v.length()).map { v.optString(it) }.filter { it.isNotBlank() }.toSet()
@@ -85,7 +86,7 @@ object Profile {
             if (k.startsWith(SECRET_PREFIX)) return@forEach
             when (v) {
                 is Long -> o.put(k, v)
-                is Int -> o.put(k, v.toLong())
+                is Int -> o.put(k, v)
                 is String -> o.put(k, v)
                 is Set<*> -> o.put(k, JSONArray(v.mapNotNull { it?.toString() }))
             }
@@ -96,3 +97,24 @@ object Profile {
     /** 给设置页显示用。 */
     fun location(ctx: Context): String = State.dir(ctx).absolutePath
 }
+
+
+/** 安全读 int：历史版本可能把整数存成了 Long，直接 getInt 会抛 ClassCastException。 */
+fun android.content.SharedPreferences.intOf(key: String, def: Int = 0): Int =
+    when (val v = all[key]) {
+        is Int -> v
+        is Long -> v.toInt()
+        is Double -> v.toInt()
+        is String -> v.toIntOrNull() ?: def
+        else -> def
+    }
+
+/** 安全读 long。 */
+fun android.content.SharedPreferences.longOf(key: String, def: Long = 0L): Long =
+    when (val v = all[key]) {
+        is Long -> v
+        is Int -> v.toLong()
+        is Double -> v.toLong()
+        is String -> v.toLongOrNull() ?: def
+        else -> def
+    }
