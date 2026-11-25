@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -365,6 +366,23 @@ fun EchoesApp(activity: ComponentActivity) {
         }
     }
 
+    // 从「段落命中」直接播：起播后跳到那一段
+    val scope0 = rememberCoroutineScope()
+    val playSegment: (Episode, Long) -> Unit = { ep, ms ->
+        startPlay(ep)
+        scope0.launch {
+            repeat(60) {
+                delay(100)
+                val c = box.controller
+                if (c != null && c.currentMediaItem?.mediaId?.substringBefore('#') == ep.id) {
+                    c.seekTo(ms)
+                    c.play()
+                    return@launch
+                }
+            }
+        }
+    }
+
     // 下一期 / 上一期（到边界给提示，而不是毫无反应）
     val playNext: () -> Unit = {
         if (queue.hasNext()) playAt(queue.index + 1)
@@ -481,6 +499,7 @@ fun EchoesApp(activity: ComponentActivity) {
             onPlayQueue = { list -> playAll(list) },
             onDetail = { detail = it },
             onOpenSettings = { searchQuery = null; tab = 2; minePage = "ai" },
+            onPlaySegment = playSegment,
         )
         return
     }

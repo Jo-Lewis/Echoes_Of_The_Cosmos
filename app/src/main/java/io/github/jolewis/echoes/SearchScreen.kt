@@ -60,6 +60,7 @@ fun SearchScreen(
     onPlayQueue: (List<Episode>) -> Unit,
     onDetail: (Episode) -> Unit,
     onOpenSettings: () -> Unit,
+    onPlaySegment: (Episode, Long) -> Unit = { _, _ -> },
 ) {
     var q by remember { mutableStateOf(initialQuery) }
     val scope = rememberCoroutineScope()
@@ -217,6 +218,28 @@ fun SearchScreen(
                         if (r.note.isNotBlank()) {
                             Spacer(Modifier.height(8.dp))
                             Text(r.note, color = Tokens.Accent, fontSize = 11.sp, lineHeight = 16.sp)
+                        }
+                        val hit = remember(r.pick.id, state.query) {
+                            ParaSearch.hits(r.pick, state.query, 1).firstOrNull()
+                        }
+                        if (hit != null) {
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                Modifier.fillMaxWidth().clickable { onPlaySegment(r.pick, hit.startMs) },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Filled.PlayCircleOutline, null,
+                                    tint = Tokens.Primary, modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    ParaSearch.fmt(hit.startMs) + " · " +
+                                        ParaSearch.snippet(hit.text, state.query),
+                                    color = Tokens.Primary, fontSize = 11.sp, lineHeight = 16.sp,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                         Spacer(Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
