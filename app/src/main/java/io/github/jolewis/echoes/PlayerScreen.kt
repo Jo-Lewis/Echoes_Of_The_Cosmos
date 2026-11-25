@@ -87,6 +87,11 @@ fun PlayerScreen(
         return
     }
 
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val tap: () -> Unit = {
+        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+    }
+
     // 三种模式本身也是一个横向 Pager：左右滑直接翻页
     val modePager = rememberPagerState(pageCount = { Mode.values().size })
     val scope = rememberCoroutineScope()
@@ -159,6 +164,7 @@ fun PlayerScreen(
                     seekTarget = target
                     onSeek(target)
                     dragging = false
+                    tap()
                 }
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -170,24 +176,24 @@ fun PlayerScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onPrev) {
+                IconButton(onClick = { tap(); onPrev() }) {
                     Icon(Icons.Filled.SkipPrevious, null, tint = Color.White)
                 }
-                IconButton(onClick = { onSeek((posMs - 10000).coerceAtLeast(0)) }) {
+                IconButton(onClick = { tap(); onSeek((posMs - 10000).coerceAtLeast(0)) }) {
                     Icon(Icons.Filled.Replay10, null, tint = Color.White)
                 }
                 FilledIconButton(
-                    onClick = onToggle,
+                    onClick = { tap(); onToggle() },
                     modifier = Modifier.size(58.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = Accent2)
                 ) {
                     Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null,
                         tint = Color.White, modifier = Modifier.size(28.dp))
                 }
-                IconButton(onClick = { onSeek((posMs + 10000).coerceAtLeast(0)) }) {
+                IconButton(onClick = { tap(); onSeek((posMs + 10000).coerceAtLeast(0)) }) {
                     Icon(Icons.Filled.Forward10, null, tint = Color.White)
                 }
-                IconButton(onClick = onNext) {
+                IconButton(onClick = { tap(); onNext() }) {
                     Icon(Icons.Filled.SkipNext, null, tint = Color.White)
                 }
             }
