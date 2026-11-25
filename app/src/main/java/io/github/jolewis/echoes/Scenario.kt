@@ -255,7 +255,15 @@ object Scenes {
 
         // 前 80 名里按分数加权随机：既有质量保证，又不会每次都同一批
         val head = scored.take(80)
-        val fresh = head.filter { it.first.id !in recent }.ifEmpty { head }
+        // 系列展开会把整条带进来，所以「这条系列听过一半以上」就整条排除
+        val collTotal = eps.filter { it.inCollection }.groupBy { it.collection }
+            .mapValues { (_, v) -> v.size }
+        val collRecent = eps.filter { it.inCollection && it.id in recent }
+            .groupingBy { it.collection }.eachCount()
+        val tired = collRecent.filter { (name, n) -> n * 2 >= (collTotal[name] ?: 1) }.keys
+        val fresh = head.filter { it.first.id !in recent && it.first.collection !in tired }
+            .ifEmpty { head.filter { it.first.id !in recent } }
+            .ifEmpty { head }
         val first = weightedPick(fresh) ?: return emptyList()
 
         val picked = ArrayList<Episode>()

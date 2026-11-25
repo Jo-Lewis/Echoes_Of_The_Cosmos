@@ -7,6 +7,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -95,12 +97,9 @@ fun EchoesApp(activity: ComponentActivity) {
     var sceneZeroAt by remember { mutableStateOf(0L) }
     var favs by remember { mutableStateOf(prefs.getStringSet("favs", emptySet())!!.toSet()) }
 
-    // 唤醒：重置淡出计时，音量回到 1
+    // 唤醒 = 延长收听：音量回到原值，淡出重新计 10 分钟（由后台服务执行）
     fun wakeScene() {
-        if (scene == null) return
-        sceneStartedAt = android.os.SystemClock.elapsedRealtime()
-        sceneZeroAt = 0L
-        Volume.setFadeScene(box.controller, 1f)
+        if (scene != null) SleepEngine.extend(10)
     }
 
     DisposableEffect(Unit) {
@@ -165,68 +164,14 @@ fun EchoesApp(activity: ComponentActivity) {
                 prefs.edit().putLong("pos_" + ep.id, c.currentPosition).apply()
             } else tracker.onIdle()
 
-            // 情景模式：三种音量策略
-            //  1) 新语义：开始后第 fadeStartMin 分钟起淡出，fadeLenMin 分钟内到 0
-            //  2) 旧语义：队列最后 fadeMin 分钟淡出
-            //  3) 都没有：不淡出，播完即停
+            // 淡出/定时/自动暂停全部由 PlaybackService 里的 SleepEngine 负责，
+            // 这里只做界面同步（锁屏或退出界面也不影响播放侧的计时）。
             val sc = scene
             if (sc != null) {
-                var remain = 0L
-                for (k in queue.index until queue.ids.size) {
-                    val e = episodes.firstOrNull { it.id == queue.ids[k] } ?: continue
-                    remain += e.durationSec * 1000L
-                }
-                remain = (remain - posMs).coerceAtLeast(0L)
-                sceneRemainMin = (remain / 60_000L).toInt()
-
-                if (sc.fadeStartMin > 0 && sc.fadeLenMin > 0) {
-                    val now = android.os.SystemClock.elapsedRealtime()
-                    if (sceneStartedAt == 0L) sceneStartedAt = now
-                    val elapsedMin = (now - sceneStartedAt) / 60_000f
-                    val vol = when {
-                        elapsedMin <= sc.fadeStartMin -> 1f
-                        elapsedMin >= sc.fadeStartMin + sc.fadeLenMin -> 0f
-                        else -> 1f - (elapsedMin - sc.fadeStartMin) / sc.fadeLenMin
-                    }
-                    Volume.setFadeScene(box.controller, vol)
-                    if (vol <= 0f) {
-                        if (sceneZeroAt == 0L) sceneZeroAt = now
-                        if (sc.idleStopMin > 0 && now - sceneZeroAt >= sc.idleStopMin * 60_000L) {
-                            box.controller?.pause()
-                            scene = null
-                            sceneZeroAt = 0L
-                            Volume.setFadeScene(box.controller, 1f)
-                            android.widget.Toast.makeText(
-                                activity, "已经安静 ${sc.idleStopMin} 分钟，先停在这里，晚安",
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    } else {
-                        sceneZeroAt = 0L
-                    }
-                    if (BuildConfig.DEBUG) {
-                        android.util.Log.d(
-                            "echoes",
-                            "scene=" + sc.name + " elapsed=" + elapsedMin.toInt() + "min vol=" + Volume.effective
-                        )
-                    }
-                } else if (sc.fadeMin > 0) {
-                    val fadeMs = sc.fadeMin * 60_000L
-                    Volume.setFadeScene(box.controller, (remain.toFloat() / fadeMs).coerceIn(0f, 1f))
-                    if (BuildConfig.DEBUG) {
-                        android.util.Log.d(
-                            "echoes",
-                            "scene=" + sc.name + " remain=" + (remain / 1000) + "s vol=" + Volume.effective
-                        )
-                    }
-                }
-
-                if (remain <= 0L && queue.index >= queue.ids.size - 1) {
-                    box.controller?.pause()
-                    Volume.setFadeScene(box.controller, 1f)
+                sceneRemainMin = SleepEngine.remainMin
+                if (!SleepEngine.active) {
                     scene = null
                     sceneZeroAt = 0L
-                    android.widget.Toast.makeText(activity, "${sc.name}模式结束，晚安", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
 
@@ -266,19 +211,11 @@ fun EchoesApp(activity: ComponentActivity) {
     }
 
     LaunchedEffect(sleepUntil) {
+        SleepEngine.setStopAt(sleepUntil)
         if (sleepUntil <= 0L) return@LaunchedEffect
-        while (true) {
-            if (sleepUntil - System.currentTimeMillis() <= 0L) {
-                val c = box.controller
-                repeat(30) { i -> Volume.setFadeSleep(c, 1f - (i + 1) / 30f); delay(1000) }
-                c?.pause()
-                Volume.setFadeSleep(c, 1f)
-                tracker.onIdle()
-                sleepUntil = 0L; sleepMin = 0
-                break
-            }
-            delay(1000)
-        }
+        while (System.currentTimeMillis() < sleepUntil) delay(1000)
+        sleepUntil = 0L
+        sleepMin = 0
     }
 
     BackHandler(
@@ -300,7 +237,20 @@ fun EchoesApp(activity: ComponentActivity) {
         if (playingId != ep.id) {
             val saved = prefs.longOf("pos_" + ep.id, 0L)
             val durMs = ep.durationSec * 1000L
-            val resume = if (saved > 5000L && saved < durMs - 10000L) saved else 0L
+            // 上次是听着睡着的：从停下的前 5 分钟接着放（书签用一次就清掉）
+            val bm = prefs.longOf("bm_" + ep.id, -1L)
+            val resume = when {
+                bm >= 0L && bm < durMs - 5000L -> {
+                    prefs.edit().remove("bm_" + ep.id).apply()
+                    android.widget.Toast.makeText(
+                        activity, "上次听到这里附近，从 ${bm / 60000} 分 ${(bm / 1000) % 60} 秒接着放",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    bm
+                }
+                saved > 5000L && saved < durMs - 10000L -> saved
+                else -> 0L
+            }
             box.playEpisode(ep, resume)
         }
     }
@@ -344,7 +294,10 @@ fun EchoesApp(activity: ComponentActivity) {
         else { queue.replace(listOf(ep.id), 0); QueueState.save(activity, queue); playAt(0) }
     }
 
-    // 一键情景：本地按偏好挑一批 → 填队列 → 从头播
+    // 一键情景：先挑好、给用户看一眼，确认后再播
+    var scenePreview by remember { mutableStateOf<List<Episode>?>(null) }
+    var scenePreviewPrefs by remember { mutableStateOf<ScenePrefs?>(null) }
+
     val startScene: (ScenePrefs) -> Unit = { sc ->
         val list = Scenes.pick(activity, sc, episodes)
         if (list.isEmpty()) {
@@ -353,17 +306,23 @@ fun EchoesApp(activity: ComponentActivity) {
                 android.widget.Toast.LENGTH_LONG
             ).show()
         } else {
-            scene = sc
-            sceneStartedAt = android.os.SystemClock.elapsedRealtime()
-            sceneZeroAt = 0L
-            Volume.setFadeScene(box.controller, 1f)
-            playAll(list)
-            val mins = list.sumOf { it.durationSec } / 60
-            android.widget.Toast.makeText(
-                activity, sc.name + " · " + list.size + " 期 · 约 " + mins + " 分钟",
-                android.widget.Toast.LENGTH_SHORT
-            ).show()
+            scenePreviewPrefs = sc
+            scenePreview = list
         }
+    }
+
+    val confirmScene: (ScenePrefs, List<Episode>) -> Unit = { sc, list ->
+        scene = sc
+        SleepEngine.start(sc.name, sc.fadeStartMin, sc.fadeLenMin, sc.idleStopMin)
+        Volume.setFadeScene(box.controller, 1f)
+        playAll(list)
+        val mins = list.sumOf { it.durationSec } / 60
+        android.widget.Toast.makeText(
+            activity, sc.name + " · " + list.size + " 期 · 约 " + mins + " 分钟",
+            android.widget.Toast.LENGTH_SHORT
+        ).show()
+        scenePreview = null
+        scenePreviewPrefs = null
     }
 
     // 从「段落命中」直接播：起播后跳到那一段
@@ -428,9 +387,11 @@ fun EchoesApp(activity: ComponentActivity) {
             sceneName = scene?.name,
             sceneRemainMin = sceneRemainMin,
             onExitScene = {
+                SleepEngine.cancel()
                 scene = null
-                Volume.setFadeScene(box.controller, 1f)
             },
+            onExtendScene = { SleepEngine.extend(10) },
+            onFadeNow = { SleepEngine.fadeNow(5) },
             onQueue = { queueSheet = true },
             onPrev = playPrev,
             onNext = playNext,
@@ -568,6 +529,61 @@ fun EchoesApp(activity: ComponentActivity) {
             )
         }
         return
+    }
+
+    // 情景模式预览：先看列表，再决定播不播
+    scenePreview?.let { list ->
+        val sc = scenePreviewPrefs
+        AlertDialog(
+            onDismissRequest = { scenePreview = null; scenePreviewPrefs = null },
+            title = {
+                Column {
+                    Text(sc?.name?.let { "$it · 准备好了" } ?: "准备好了",
+                        color = Tokens.OnBg)
+                    Text(
+                        "${list.size} 期 · 共 ${list.sumOf { it.durationSec } / 60} 分钟" +
+                            (sc?.let {
+                                if (it.fadeStartMin > 0) " · 第 ${it.fadeStartMin} 分钟起淡出" else ""
+                            } ?: ""),
+                        color = Tokens.Muted, fontSize = 11.sp
+                    )
+                }
+            },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    items(list) { ep ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            CoverImage(ep, 40, 10)
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(ep.title, color = Tokens.OnBg, fontSize = 12.sp,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("${ep.minutes} 分钟" + if (ep.inCollection) " · ${ep.collection} 第 ${ep.collSeq} 期" else "",
+                                    color = Tokens.Muted, fontSize = 10.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val s2 = sc ?: return@TextButton
+                    confirmScene(s2, list)
+                }) { Text("开始播放", color = Tokens.Primary) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        sc?.let { startScene(it) }   // 换一批
+                    }) { Text("换一批", color = Tokens.Muted) }
+                    TextButton(onClick = { scenePreview = null; scenePreviewPrefs = null }) {
+                        Text("取消", color = Tokens.Muted)
+                    }
+                }
+            },
+            containerColor = Tokens.Surface
+        )
     }
 
     Scaffold(

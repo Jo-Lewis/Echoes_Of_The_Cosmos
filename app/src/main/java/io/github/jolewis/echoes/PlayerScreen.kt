@@ -66,6 +66,17 @@ private fun loadLines(ep: Episode): List<Line> = runCatching {
 }.getOrDefault(emptyList())
 
 @Composable
+private fun BannerAction(text: String, onClick: () -> Unit) {
+    Text(
+        text, color = Tokens.Primary, fontSize = 10.sp,
+        modifier = Modifier.clip(RoundedCornerShape(8.dp))
+            .background(Tokens.Bg.copy(alpha = 0.55f))
+            .clickable { onClick() }
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    )
+}
+
+@Composable
 fun PlayerScreen(
     ep: Episode?,
     playing: Boolean,
@@ -76,6 +87,8 @@ fun PlayerScreen(
     sceneName: String? = null,
     sceneRemainMin: Int = 0,
     onExitScene: () -> Unit = {},
+    onExtendScene: () -> Unit = {},
+    onFadeNow: () -> Unit = {},
     onQueue: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
@@ -118,16 +131,32 @@ fun PlayerScreen(
 
         // 情景模式提示条：显示并可退出
         if (sceneName != null) {
-            Row(
+            Column(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
                     .clip(RoundedCornerShape(10.dp)).background(Tokens.Elevated)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                Text("$sceneName 模式 · 剩余约 $sceneRemainMin 分钟", color = Tokens.Primary, fontSize = 10.sp)
-                Spacer(Modifier.weight(1f))
-                Text("退出", color = Tokens.Muted, fontSize = 10.sp,
-                    modifier = Modifier.clickable { onExitScene() }.padding(horizontal = 6.dp, vertical = 2.dp))
+                Text(
+                    "$sceneName 模式 · 约 $sceneRemainMin 分钟后静音",
+                    color = Tokens.Primary, fontSize = 11.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "还想听就延长，困了就淡出",
+                        color = Tokens.Muted, fontSize = 9.sp,
+                        modifier = Modifier.weight(1f), maxLines = 1
+                    )
+                    BannerAction("再听 10 分钟") { tap(); onExtendScene() }
+                    Spacer(Modifier.width(6.dp))
+                    BannerAction("现在淡出") { tap(); onFadeNow() }
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "退出", color = Tokens.Muted, fontSize = 10.sp,
+                        modifier = Modifier.clickable { onExitScene() }
+                            .padding(horizontal = 4.dp, vertical = 4.dp)
+                    )
+                }
             }
         }
 
