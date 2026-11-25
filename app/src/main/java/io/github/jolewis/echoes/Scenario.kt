@@ -29,6 +29,7 @@ import kotlin.random.Random
  *
  * 存 prefs（`scene_prefs`），跟着 Profile 一起镜像到媒体库 state/，重装不丢。
  */
+// build-tag: normalfade
 data class ScenePrefs(
     val id: String,
     val name: String,

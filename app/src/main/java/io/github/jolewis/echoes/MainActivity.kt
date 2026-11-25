@@ -544,6 +544,12 @@ fun EchoesApp(activity: ComponentActivity) {
                 sleepUntil = if (m == 0) 0L else System.currentTimeMillis() + m * 60_000L
             }) { minePage = null }
             "library" -> LibraryPage(episodes) { minePage = null }
+            "collections" -> CollectionsPage(
+                episodes,
+                onBack = { minePage = null },
+                onOpenEpisode = { minePage = null; detail = it },
+                onPlayAll = { list -> minePage = null; playAll(list) },
+            )
             "about" -> AboutPage { minePage = null }
             "ai" -> AiSettingsPage(llmCfg, { c -> c.save(activity); llmCfg = c }) { minePage = null }
             "scenes" -> SceneListPage(
@@ -603,6 +609,7 @@ fun EchoesApp(activity: ComponentActivity) {
                     onPlay = { startPlay(it) },
                     onDetail = { detail = it },
                     onQueryChange = { libQuery = it },
+            onOpenCollections = { minePage = "collections" },
                 )
                 else -> MineScreen(
                     episodes, recs, favs, sleepMin, llmCfg.ready, scenes.size,

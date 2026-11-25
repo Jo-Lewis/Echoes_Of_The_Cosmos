@@ -1,16 +1,21 @@
 package io.github.jolewis.echoes
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -24,6 +29,7 @@ fun LibraryScreen(
     onPlay: (Episode) -> Unit,
     onDetail: (Episode) -> Unit,
     onQueryChange: (String) -> Unit,
+    onOpenCollections: () -> Unit = {},
 ) {
     var q by remember(query) { mutableStateOf(query) }
     var scope by remember { mutableStateOf("全部") }
@@ -59,7 +65,25 @@ fun LibraryScreen(
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(16.dp))
-        Text("节目库", color = Tokens.OnBg, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("节目库", color = Tokens.OnBg, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            val seriesCount = remember(episodes) {
+                episodes.filter { it.inCollection }.mapNotNull { it.collection }.distinct().size
+            }
+            if (seriesCount > 0) {
+                Row(
+                    Modifier.clip(RoundedCornerShape(20.dp)).background(Tokens.Surface)
+                        .clickable { onOpenCollections() }
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("系列合集 $seriesCount", color = Tokens.Primary, fontSize = 11.sp)
+                    Icon(Icons.Filled.KeyboardArrowRight, null, tint = Tokens.Primary,
+                        modifier = Modifier.size(14.dp))
+                }
+            }
+        }
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(
             value = q,

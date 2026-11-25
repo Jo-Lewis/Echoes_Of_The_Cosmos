@@ -44,6 +44,8 @@ class SearchState {
     var error by mutableStateOf<String?>(null)
     var intent by mutableStateOf<Intent?>(null)
     var index: SmartSearch.Index? = null
+    var paraHits by mutableStateOf<List<ParaIndex.Hit>>(emptyList())
+    var paraScanning by mutableStateOf(false)
 
     /** 已经算完的查询词；等于当前词就不再重跑 */
     var finishedFor: String? = null
@@ -64,6 +66,7 @@ fun SearchScreen(
 ) {
     var q by remember { mutableStateOf(initialQuery) }
     val scope = rememberCoroutineScope()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
 
     suspend fun runSearch(query: String) {
         if (query.isBlank()) return
@@ -85,6 +88,18 @@ fun SearchScreen(
         }.onSuccess {
             state.result = it
             state.finishedFor = query
+
+        // 全文扫描：整库正文里还提到这句话的地方（不依赖 LLM）
+        state.paraHits = emptyList()
+        if (ParaIndex.available(ctx)) {
+            state.paraScanning = true
+            val used = buildSet {
+                state.result?.pick?.let { add(it.id) }
+                state.result?.queue?.forEach { add(it.id) }
+            }
+            state.paraHits = ParaIndex.search(ctx, query, 6, used)
+            state.paraScanning = false
+        }
             if (it == null) state.error = "库内没有符合条件的节目"
         }.onFailure {
             state.error = it.message ?: "检索失败"
@@ -288,7 +303,51 @@ fun SearchScreen(
                 }
 
                 if (r.queue.isNotEmpty()) {
-                    item { SectionTitle("接下来可以听") }
+                    if (state.paraHits.isNotEmpty()) {
+                    item {
+                        SectionTitle("正文里还提到")
+                        Text(
+                            "整库文稿里的原话，点一下从那一句开始播",
+                            color = Tokens.Muted, fontSize = 10.sp
+                        )
+                        Spacer(Modifier.height(4.dp))
+                    }
+                    items(state.paraHits) { h ->
+                        val ep = episodes.firstOrNull { it.id == h.epId }
+                        if (ep != null) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 6.dp)
+                                    .clickable { onPlaySegment(ep, h.startMs) },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CoverImage(ep, 40, 10)
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        ep.title + " · " + ParaSearch.fmt(h.startMs),
+                                        color = Tokens.OnBg, fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        ParaSearch.snippet(h.text, state.query),
+                                        color = Tokens.Muted, fontSize = 11.sp,
+                                        lineHeight = 15.sp, maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                if (state.paraScanning) {
+                    item {
+                        Text("正在全文扫描…", color = Tokens.Muted, fontSize = 10.sp,
+                            modifier = Modifier.padding(vertical = 4.dp))
+                    }
+                }
+
+                item { SectionTitle("接下来可以听") }
                     items(r.queue, key = { "q" + it.id }) { ep ->
                         EpisodeRow(ep) { onDetail(ep) }
                     }
