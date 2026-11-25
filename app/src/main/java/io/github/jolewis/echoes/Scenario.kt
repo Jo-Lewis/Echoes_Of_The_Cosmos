@@ -245,6 +245,20 @@ object Scenes {
         p: ScenePrefs,
         eps: List<Episode>,
         exclude: Set<String> = emptySet(),
+        listened: Set<String> = emptySet(),
+    ): List<Episode> {
+        // 先只从没听过的里面挑；实在没有新的，再放宽到全部（会提示用户）
+        val unheard = pickInner(ctx, p, eps, exclude, listened)
+        if (unheard.isNotEmpty()) return unheard
+        return pickInner(ctx, p, eps, exclude, emptySet())
+    }
+
+    private fun pickInner(
+        ctx: Context,
+        p: ScenePrefs,
+        eps: List<Episode>,
+        exclude: Set<String>,
+        listened: Set<String>,
     ): List<Episode> {
         val yearFloor = p.yearMin
         val yearCeil = if (p.yearMax > 0) p.yearMax else 9999
@@ -259,6 +273,7 @@ object Scenes {
             .filter { p.tones.isEmpty() || it.tone in p.tones }
             .filter { p.contentTypes.isEmpty() || it.contentType in p.contentTypes }
             .filter { !p.sleepOnly || it.sleepFriendly || quiet(it) }
+            .filter { it.id !in listened }
             .map { it to score(p, it) }
             .sortedByDescending { it.second }
             .toList()

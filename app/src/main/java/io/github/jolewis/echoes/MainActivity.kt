@@ -299,11 +299,13 @@ fun EchoesApp(activity: ComponentActivity) {
     var scenePreviewPrefs by remember { mutableStateOf<ScenePrefs?>(null) }
     // 列表内容可能与上一批完全相同，用轮次强制刷新界面
     var previewRound by remember { mutableIntStateOf(0) }
-    var aiNote by remember { mutableStateOf("") }
-    val sceneScope = rememberCoroutineScope()
 
     val startScene: (ScenePrefs, Set<String>) -> Unit = { sc, excl ->
-        val list = Scenes.pick(activity, sc, episodes, excl)
+        // 听过的（有记录，或进度超过 5 秒）不再推给情景模式
+        val listened = recs.map { it.id }.toSet() + prefs.all.keys
+            .filter { it.startsWith("pos_") && (prefs.all[it] as? Long ?: 0L) > 5000L }
+            .map { it.removePrefix("pos_") }
+        val list = Scenes.pick(activity, sc, episodes, excl, listened)
         if (list.isEmpty()) {
             android.widget.Toast.makeText(
                 activity, "没找到符合「" + sc.name + "」条件的节目，去设置里放宽一点试试",
@@ -313,22 +315,6 @@ fun EchoesApp(activity: ComponentActivity) {
             scenePreviewPrefs = sc
             scenePreview = list
             previewRound += 1
-            aiNote = ""
-            // 配了 AI 就让它在后台再挑一版，回来再替换
-            if (llmCfg.ready) {
-                sceneScope.launch {
-                    val cands = withContext(Dispatchers.IO) {
-                        Scenes.candidates(sc, episodes, 24)
-                    }
-                    val ai = SceneAi.suggest(llmCfg, sc, cands, sc.totalMin, episodes)
-                    if (ai != null && ai.isNotEmpty()) {
-                        scenePreview = ai
-                        scenePreviewPrefs = sc
-                        previewRound += 1
-                        aiNote = "AI 已按「" + sc.name + "」重新挑过"
-                    }
-                }
-            }
         }
     }
 
@@ -344,7 +330,6 @@ fun EchoesApp(activity: ComponentActivity) {
         ).show()
         scenePreview = null
         scenePreviewPrefs = null
-        aiNote = ""
     }
 
     // 从「段落命中」直接播：起播后跳到那一段
@@ -556,7 +541,6 @@ fun EchoesApp(activity: ComponentActivity) {
     // 情景模式预览：先看列表，再决定播不播
     scenePreview?.let { list ->
         val sc = scenePreviewPrefs
-        val round = previewRound
         AlertDialog(
             onDismissRequest = { scenePreview = null; scenePreviewPrefs = null },
             title = {
@@ -564,12 +548,10 @@ fun EchoesApp(activity: ComponentActivity) {
                     Text(sc?.name?.let { "$it · 准备好了" } ?: "准备好了",
                         color = Tokens.OnBg)
                     Text(
-                        aiNote.ifBlank {
-                            "${list.size} 期 · 共 ${list.sumOf { it.durationSec } / 60} 分钟" +
-                                (sc?.let {
-                                    if (it.fadeStartMin > 0) " · 第 ${it.fadeStartMin} 分钟起淡出" else ""
-                                } ?: "")
-                        },
+                        "${list.size} 期 · 共 ${list.sumOf { it.durationSec } / 60} 分钟" +
+                            (sc?.let {
+                                if (it.fadeStartMin > 0) " · 第 ${it.fadeStartMin} 分钟起淡出" else ""
+                            } ?: ""),
                         color = Tokens.Muted, fontSize = 11.sp
                     )
                 }
