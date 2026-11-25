@@ -97,9 +97,13 @@ object Llm {
             if (!resp.isSuccessful) {
                 throw IOException("HTTP ${resp.code}：${text.take(160)}")
             }
-            JSONObject(text)
+            val content = JSONObject(text)
                 .getJSONArray("choices").getJSONObject(0)
-                .getJSONObject("message").getString("content")
+                .getJSONObject("message").optString("content")
+            if (content.isBlank()) {
+                android.util.Log.w("echoes", "llm blank content, body=" + text.take(400))
+            }
+            content
         }
     }
 }

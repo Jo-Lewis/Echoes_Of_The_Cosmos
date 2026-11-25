@@ -111,7 +111,7 @@ pick 和 queue 都填**序号数字**（不是节目名）。queue 给 3-6 个�
 
     // ---------------------------------------------------------- 解析与校验
 
-    private fun extractJson(raw: String): String {
+    internal fun extractJson(raw: String): String {
         val s = raw.trim()
         if (s.startsWith("{") && s.endsWith("}")) return s
         val start = s.indexOf('{')

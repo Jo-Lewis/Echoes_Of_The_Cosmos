@@ -233,10 +233,22 @@ object Scenes {
      * 按配置挑节目。每次结果都不同：
      * 先打分取前 40，再随机洗牌，并排除上一次用过的那批。
      */
-    fun pick(ctx: Context, p: ScenePrefs, eps: List<Episode>): List<Episode> {
+    /**
+     * 生成一批节目。
+     *
+     * **系列纯净规则**：只要队列里出现系列节目，整条队列就只放这一个系列
+     * （从第 1 期开始按顺序取）；否则只放单集，绝不掺系列碎片。
+     * 之前是「先挑一期、再随便补齐」，会变成泽连斯基1 → 某单集 → 另一个系列某期，听着断。
+     */
+    fun pick(
+        ctx: Context,
+        p: ScenePrefs,
+        eps: List<Episode>,
+        exclude: Set<String> = emptySet(),
+    ): List<Episode> {
         val yearFloor = p.yearMin
         val yearCeil = if (p.yearMax > 0) p.yearMax else 9999
-        val recent = lastPicked(ctx, p.id)
+        val recent = lastPicked(ctx, p.id) + exclude
 
         val scored = eps.asSequence()
             .filter { it.durationSec in (p.perMin * 60)..(p.perMax * 60) }
@@ -253,68 +265,75 @@ object Scenes {
 
         if (scored.isEmpty()) return emptyList()
 
-        // 前 80 名里按分数加权随机：既有质量保证，又不会每次都同一批
+        val targetSec = p.totalMin * 60
         val head = scored.take(80)
-        // 系列展开会把整条带进来，所以「这条系列听过一半以上」就整条排除
+
+        // 系列维度：整条听过一半以上就不再出现
         val collTotal = eps.filter { it.inCollection }.groupBy { it.collection }
             .mapValues { (_, v) -> v.size }
         val collRecent = eps.filter { it.inCollection && it.id in recent }
             .groupingBy { it.collection }.eachCount()
-        val tired = collRecent.filter { (name, n) -> n * 2 >= (collTotal[name] ?: 1) }.keys
+        val tired = collRecent.filter { (n, c) -> c * 2 >= (collTotal[n] ?: 1) }.keys
+
         val fresh = head.filter { it.first.id !in recent && it.first.collection !in tired }
-            .ifEmpty { head.filter { it.first.id !in recent } }
+            .ifEmpty { head.filter { it.first.id !in exclude } }
             .ifEmpty { head }
-        val first = weightedPick(fresh) ?: return emptyList()
+        val seed = weightedPick(fresh)?.first ?: return emptyList()
 
-        val picked = ArrayList<Episode>()
-        val usedTopics = HashSet<String>()
-        var sum = 0
+        val out = ArrayList<Episode>()
 
-        // ---- 系列优先：能整条放下就整条，放不下就从第一期开始 ----
-        val series = if (first.first.inCollection) {
-            eps.filter { it.collection == first.first.collection }.sortedBy { it.collSeq }
-        } else emptyList()
-
-        if (series.size >= 2) {
-            val seriesTotal = series.sumOf { it.durationSec }
-            val targetSec = p.totalMin * 60
-            if (seriesTotal <= targetSec * 1.6 || p.countMode == "one") {
-                picked.addAll(series)
-                sum = seriesTotal
-            } else {
-                picked.add(series.first())
-                sum = series.first().durationSec
+        if (seed.inCollection) {
+            // 只放这一个系列，按顺序从第 1 期开始
+            val parts = eps.filter { it.collection == seed.collection }.sortedBy { it.collSeq }
+            var sum = 0
+            for (e in parts) {
+                if (out.isNotEmpty() && (sum >= targetSec || out.size >= 8)) break
+                out.add(e)
+                sum += e.durationSec
+                if (p.countMode == "one") break
             }
         } else {
-            picked.add(first.first)
-            sum = first.first.durationSec
-        }
-        picked.forEach { usedTopics.addAll(it.topics) }
-
-        val enough = sum >= p.totalMin * 60 * 0.7 && sum <= p.totalMin * 60 * 1.4
-        if (p.countMode == "one") {
-            remember(ctx, p.id, picked)
-            return picked
-        }
-        if (p.countMode == "auto" && enough) {
-            remember(ctx, p.id, picked)
-            return picked
-        }
-
-        // ---- 继续凑时长：优先没听过的，实在没有了再回退到听过的 ----
-        val all = head.map { it.first } + scored.drop(80).map { it.first }
-        val rest = all.filter { it.id !in recent }.ifEmpty { all }
-        for (e in rest) {
-            if (sum >= p.totalMin * 60) break
-            if (picked.size >= 8) break
-            if (picked.any { it.id == e.id }) continue
-            if (e.inCollection && picked.any { it.collection == e.collection }) continue
-            if (picked.isNotEmpty() && e.topics.count { it in usedTopics } >= 2) continue
-            picked.add(e); usedTopics.addAll(e.topics); sum += e.durationSec
+            // 只放单集：绝不再掺系列碎片
+            val singles = (listOf(seed) + head.map { it.first } + scored.drop(80).map { it.first })
+                .filter { !it.inCollection }
+                .distinctBy { it.id }
+            val usedTopics = HashSet<String>()
+            var sum = 0
+            val limit = if (p.countMode == "one") 1 else if (p.countMode == "many") 8 else 6
+            for (e in singles) {
+                if (out.size >= limit) break
+                if (out.isNotEmpty() && sum >= targetSec) break
+                if (e.id in exclude) continue
+                if (out.isNotEmpty() && e.topics.count { it in usedTopics } >= 2) continue
+                out.add(e)
+                usedTopics.addAll(e.topics)
+                sum += e.durationSec
+            }
         }
 
-        remember(ctx, p.id, picked)
-        return picked
+        if (out.isEmpty()) return emptyList()
+        remember(ctx, p.id, out)
+        return out
+    }
+
+    /** 给 LLM 用的候选池：按场景偏好排序后的前 N 期（不做历史过滤）。 */
+    fun candidates(p: ScenePrefs, eps: List<Episode>, limit: Int = 24): List<Episode> {
+        val yearFloor = p.yearMin
+        val yearCeil = if (p.yearMax > 0) p.yearMax else 9999
+        return eps.asSequence()
+            .filter { it.durationSec in (p.perMin * 60)..(p.perMax * 60) }
+            .filter { it.year >= yearFloor && it.year <= yearCeil }
+            .filter { it.level <= p.levelMax }
+            .filter { it.load <= p.loadMax }
+            .filter { it.humor in p.humorMin..p.humorMax }
+            .filter { p.tones.isEmpty() || it.tone in p.tones }
+            .filter { p.contentTypes.isEmpty() || it.contentType in p.contentTypes }
+            .filter { !p.sleepOnly || it.sleepFriendly || quiet(it) }
+            .map { it to score(p, it) }
+            .sortedByDescending { it.second }
+            .map { it.first }
+            .take(limit)
+            .toList()
     }
 
     /** 按分数加权随机取一个，分数越高越可能被选中，但不是必然。 */
