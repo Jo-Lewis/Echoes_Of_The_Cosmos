@@ -43,6 +43,9 @@ fun CollectionsPage(
     var open by remember { mutableStateOf<String?>(null) }
     val cur = cols.firstOrNull { it.name == open }
 
+    // 在合集详情页时，系统返回先退回合集列表；列表页才交给上层（MainActivity）
+    androidx.activity.compose.BackHandler(enabled = open != null) { open = null }
+
     if (cur == null) {
         SubPage("系列合集", onBack) {
             Text(
