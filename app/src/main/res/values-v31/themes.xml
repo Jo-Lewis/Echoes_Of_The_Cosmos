@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ 的系统启动屏：背景与 App 启动页一致，避免白屏闪一下 -->
+    <style name="Theme.Echoes" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#101827</item>
+        <item name="android:navigationBarColor">#101827</item>
+        <item name="android:windowBackground">#101827</item>
+        <item name="android:windowSplashScreenBackground">#101827</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher</item>
+    </style>
+</resources>

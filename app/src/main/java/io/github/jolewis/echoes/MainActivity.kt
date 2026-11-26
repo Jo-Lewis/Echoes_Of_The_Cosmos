@@ -69,6 +69,10 @@ fun EchoesApp(activity: ComponentActivity) {
     var episodes by remember { mutableStateOf<List<Episode>>(emptyList()) }
     var recs by remember { mutableStateOf<List<ListenRec>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    // 启动页至少停 2 秒；这 2 秒里顺带做全量校验
+    var splashMin by remember { mutableStateOf(false) }
+    var freshReady by remember { mutableStateOf(false) }
+    var splashTimeout by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf(0) }
     var playerOpen by remember { mutableStateOf(false) }
     var current by remember { mutableStateOf<Episode?>(null) }
@@ -164,6 +168,7 @@ fun EchoesApp(activity: ComponentActivity) {
             LibraryCache.mem = fresh
             withContext(Dispatchers.IO) { runCatching { Library.saveCache(activity, fresh) } }
         }
+        freshReady = true
     }
 
     // 预热检索字段（标题/简介/关键词的归一化文本），首次搜索就不用现算了
@@ -418,16 +423,29 @@ fun EchoesApp(activity: ComponentActivity) {
     }
 
 
-    if (loading) {
-        Box(Modifier.fillMaxSize().background(Tokens.Bg), contentAlignment = Alignment.Center) {
-            Text("正在加载 3,000 多期…", color = Tokens.Muted)
+    // 启动页：最少停 2 秒；这 2 秒内把缓存读取和全量校验都做完
+    LaunchedEffect(Unit) {
+        delay(2000)
+        splashMin = true
+    }
+    // 兜底：库特别大时也不能一直卡在启动页
+    LaunchedEffect(Unit) {
+        delay(6000)
+        splashTimeout = true
+    }
+    if (loading || !splashMin || (!freshReady && !splashTimeout)) {
+        val status = when {
+            loading -> "正在读取节目库"
+            !freshReady -> "正在核对节目单"
+            else -> ""
         }
+        // 加载过程中期数还不准，等读完再显示
+        SplashScreen(if (loading) 0 else episodes.size,
+            (episodes.sumOf { it.durationSec } / 3600), status)
         return
     }
     if (episodes.isEmpty()) {
-        Box(Modifier.fillMaxSize().background(Tokens.Bg), contentAlignment = Alignment.Center) {
-            Text("没有找到媒体库\n把库推到 /sdcard/2049lib/ 后重启", color = Tokens.Muted)
-        }
+        LibraryMissingScreen()
         return
     }
 

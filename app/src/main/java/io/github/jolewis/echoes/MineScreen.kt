@@ -71,8 +71,7 @@ fun MineScreen(
             MenuGroup {
                 MenuRow(Icons.Filled.AutoAwesome, "情景模式", "$sceneCount 个模式，可改偏好") { onOpenPage("scenes") }
                 MenuRow(Icons.Filled.Timer, "定时关闭",
-                    if (sleepMin == 0) "关" else "$sleepMin 分钟") { onOpenPage("settings") }
-                MenuRow(Icons.Filled.Settings, "播放设置", "定时、跳过、语速") { onOpenPage("settings") }
+                    if (sleepMin == 0) "关" else "$sleepMin 分钟后停止") { onOpenPage("settings") }
                 MenuRow(Icons.Filled.AutoAwesome, "AI 设置",
                     if (aiReady) "已配置，可用自然语言点播" else "未配置，当前为本地匹配") { onOpenPage("ai") }
             }
@@ -385,10 +384,10 @@ fun HistoryPage(
 
 @Composable
 fun SettingsPage(sleepMin: Int, onSleep: (Int) -> Unit, onBack: () -> Unit) {
-    SubPage("播放设置", onBack) {
+    SubPage("定时关闭", onBack) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             item {
-                SectionTitle("定时关闭")
+                SectionTitle("到点后")
                 CardBox(Modifier.fillMaxWidth()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(0, 15, 30, 45, 60).forEach { m ->
@@ -404,15 +403,6 @@ fun SettingsPage(sleepMin: Int, onSleep: (Int) -> Unit, onBack: () -> Unit) {
                     Text("到点前 30 秒渐弱，然后暂停", color = Tokens.Muted, fontSize = 10.sp)
                 }
             }
-            item {
-                SectionTitle("已知限制")
-                CardBox(Modifier.fillMaxWidth()) {
-                    Text(
-                        "偏轻的节目最多只能调到原音量（系统不允许应用放大），所以正增益不生效。",
-                        color = Tokens.Muted, fontSize = 11.sp
-                    )
-                }
-            }
             item { Spacer(Modifier.height(28.dp)) }
         }
     }
@@ -424,7 +414,8 @@ fun LibraryPage(episodes: List<Episode>, onBack: () -> Unit) {
     val withText = episodes.count { it.blocks != null }
     val withImages = episodes.count { it.images.isNotEmpty() }
     val noText = episodes.size - withText
-    val series = episodes.count { it.series != null }
+    val series = episodes.count { it.inCollection }
+    val seriesCount = episodes.filter { it.inCollection }.mapNotNull { it.collection }.distinct().size
 
     SubPage("媒体库", onBack) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
@@ -435,7 +426,7 @@ fun LibraryPage(episodes: List<Episode>, onBack: () -> Unit) {
                     KV("含文稿", "$withText 期")
                     KV("含配图", "$withImages 期")
                     KV("无文稿（待转录）", "$noText 期")
-                    KV("属于专题", "$series 期")
+                    KV("属于系列", "$series 期 / $seriesCount 个系列")
                 }
             }
             item {
@@ -475,7 +466,9 @@ fun AboutPage(onBack: () -> Unit) {
             Text("v0.1.0 · 本地优先", color = Tokens.Muted, fontSize = 12.sp)
             Spacer(Modifier.height(16.dp))
             Text(
-                "所有音频、文稿、配图都在本机，不上传任何内容。AI 语义理解尚未接入，当前搜索为本地关键词匹配。",
+                "所有音频、文稿、配图都在这台手机上，不上传任何内容。\n\n" +
+                    "搜索分两层：本地的标题/关键词匹配随时可用；配了 AI 后，" +
+                    "会先用自然语言理解你的意思再挑节目。AI 只发送标题和简介，不发送音频。",
                 color = Tokens.Muted, fontSize = 13.sp, lineHeight = 21.sp
             )
             Spacer(Modifier.height(28.dp))
