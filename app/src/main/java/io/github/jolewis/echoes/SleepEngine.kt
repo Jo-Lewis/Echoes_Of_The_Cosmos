@@ -17,6 +17,9 @@ object SleepEngine {
 
     var active = false
         private set
+    /** 这个情景是否启用淡出。没有配置淡出参数的模式（通勤/家务/专注…）为 false。 */
+    var fadeEnabled = false
+        private set
     var sceneName = ""
         private set
 
@@ -40,9 +43,11 @@ object SleepEngine {
 
     fun start(scene: String, fadeStart: Int, fadeLen: Int, idleStop: Int) {
         sceneName = scene
-        fadeStartMin = if (fadeStart > 0) fadeStart else 15
-        fadeLenMin = if (fadeLen > 0) fadeLen else 10
+        // 不再兜底：没配就是没配，否则通勤/家务这些模式也会被淡出
+        fadeStartMin = fadeStart.coerceAtLeast(0)
+        fadeLenMin = fadeLen.coerceAtLeast(0)
         idleStopMin = idleStop
+        fadeEnabled = fadeStartMin > 0 && fadeLenMin > 0
         startedAt = SystemClock.elapsedRealtime()
         zeroAt = 0L
         extended = 0
@@ -52,7 +57,7 @@ object SleepEngine {
 
     /** 延长收听：音量立刻回到原值，并从头再计一轮淡出计时。 */
     fun extend(minutes: Int = 10) {
-        if (!active) return
+        if (!active || !fadeEnabled) return
         startedAt = SystemClock.elapsedRealtime()
         zeroAt = 0L
         extended += 1
@@ -64,7 +69,7 @@ object SleepEngine {
 
     /** 提前淡出：立刻开始，用 lenMin 分钟降到 0。 */
     fun fadeNow(lenMin: Int = 5) {
-        if (!active) return
+        if (!active || !fadeEnabled) return
         startedAt = SystemClock.elapsedRealtime()
         fadeStartMin = 0
         fadeLenMin = lenMin
@@ -100,7 +105,7 @@ object SleepEngine {
             Volume.setFadeSleep(null, 1f)
         }
 
-        if (!active) {
+        if (!active || !fadeEnabled) {
             Volume.setFadeScene(null, 1f)
             player.volume = Volume.effective
             return false

@@ -86,6 +86,7 @@ fun PlayerScreen(
     onBack: () -> Unit,
     sceneName: String? = null,
     sceneRemainMin: Int = 0,
+    sceneFade: Boolean = true,
     onExitScene: () -> Unit = {},
     onExtendScene: () -> Unit = {},
     onFadeNow: () -> Unit = {},
@@ -137,20 +138,23 @@ fun PlayerScreen(
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 Text(
-                    "$sceneName 模式 · 约 $sceneRemainMin 分钟后静音",
+                    if (sceneFade) "$sceneName 模式 · 约 $sceneRemainMin 分钟后静音"
+                    else "$sceneName 模式 · 还剩约 $sceneRemainMin 分钟",
                     color = Tokens.Primary, fontSize = 11.sp
                 )
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "还想听就延长，困了就淡出",
+                        if (sceneFade) "还想听就延长，困了就淡出" else "按顺序连着听",
                         color = Tokens.Muted, fontSize = 9.sp,
                         modifier = Modifier.weight(1f), maxLines = 1
                     )
-                    BannerAction("再听 10 分钟") { tap(); onExtendScene() }
-                    Spacer(Modifier.width(6.dp))
-                    BannerAction("现在淡出") { tap(); onFadeNow() }
-                    Spacer(Modifier.width(6.dp))
+                    if (sceneFade) {
+                        BannerAction("再听 10 分钟") { tap(); onExtendScene() }
+                        Spacer(Modifier.width(6.dp))
+                        BannerAction("现在淡出") { tap(); onFadeNow() }
+                        Spacer(Modifier.width(6.dp))
+                    }
                     Text(
                         "退出", color = Tokens.Muted, fontSize = 10.sp,
                         modifier = Modifier.clickable { onExitScene() }

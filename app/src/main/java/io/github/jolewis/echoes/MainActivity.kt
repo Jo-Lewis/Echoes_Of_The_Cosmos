@@ -131,14 +131,24 @@ fun EchoesApp(activity: ComponentActivity) {
 
     LaunchedEffect(Unit) {
         if (!activity.intent?.getStringExtra("libq").isNullOrBlank()) tab = 1
+        val t0 = android.os.SystemClock.elapsedRealtime()
         val cached = withContext(Dispatchers.IO) { Library.loadCached(activity) }
+        val t1 = android.os.SystemClock.elapsedRealtime()
         episodes = cached
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d("echoes", "perf cacheLoad=" + (t1 - t0) + "ms n=" + cached.size)
+        }
         recs = withContext(Dispatchers.IO) { ListenLog.load(activity) }
         loading = false
         current = cached.firstOrNull { it.id == prefs.getString("last", null) }
         box.connect { }
 
+        val t2 = android.os.SystemClock.elapsedRealtime()
         val fresh = withContext(Dispatchers.IO) { Library.load(activity) }
+        val t3 = android.os.SystemClock.elapsedRealtime()
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d("echoes", "perf fullScan=" + (t3 - t2) + "ms n=" + fresh.size)
+        }
         if (fresh.size != cached.size) {
             episodes = fresh
             LibraryCache.mem = fresh
@@ -169,7 +179,15 @@ fun EchoesApp(activity: ComponentActivity) {
             // 这里只做界面同步（锁屏或退出界面也不影响播放侧的计时）。
             val sc = scene
             if (sc != null) {
-                sceneRemainMin = SleepEngine.remainMin
+                sceneRemainMin = if (SleepEngine.fadeEnabled) SleepEngine.remainMin else {
+                    // 不淡出的模式：显示队列剩余时长
+                    var remain = 0L
+                    for (k in queue.index until queue.ids.size) {
+                        val e = episodes.firstOrNull { it.id == queue.ids[k] } ?: continue
+                        remain += e.durationSec * 1000L
+                    }
+                    ((remain - posMs).coerceAtLeast(0L) / 60_000L).toInt()
+                }
                 if (!SleepEngine.active) {
                     scene = null
                     sceneZeroAt = 0L
@@ -394,6 +412,7 @@ fun EchoesApp(activity: ComponentActivity) {
             onBack = { playerOpen = false },
             sceneName = scene?.name,
             sceneRemainMin = sceneRemainMin,
+            sceneFade = SleepEngine.fadeEnabled,
             onExitScene = {
                 SleepEngine.cancel()
                 scene = null

@@ -154,6 +154,7 @@ fun SceneEditPage(
                 modifier = Modifier.padding(start = 2.dp, top = 2.dp)
             )
 
+            if (p.id == "sleep" || !p.builtin) {
             Spacer(Modifier.height(18.dp))
             Text("淡出", color = Tokens.Muted, fontSize = 11.sp)
             Spacer(Modifier.height(4.dp))
@@ -184,6 +185,7 @@ fun SceneEditPage(
                 "到 0 之后按音量键会重新出声，再从头计一轮。",
                 color = Tokens.Muted, fontSize = 10.sp
             )
+            }
 
             Spacer(Modifier.height(4.dp))
             MultiChips("风格（可多选，不选=不限）", Scenes.tones, p.tones) { t ->

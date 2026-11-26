@@ -48,6 +48,7 @@ fun LibraryScreen(
     }
 
     val shown = remember(q, scope, sort, year, type, episodes, listened) {
+        val tf = android.os.SystemClock.elapsedRealtime()
         var list = if (q.isBlank()) episodes else Library.search(episodes, q)
         when (scope) {
             "未听" -> list = list.filter { it.id !in listened }
@@ -62,6 +63,13 @@ fun LibraryScreen(
             sort == "最短" -> list = list.sortedBy { it.durationSec }
             q.isNotBlank() -> Unit
             else -> list = list.sortedByDescending { it.date }
+        }
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d(
+                "echoes",
+                "perf libraryCompose filter=" + (android.os.SystemClock.elapsedRealtime() - tf) +
+                    "ms q=" + q + " shown=" + list.size
+            )
         }
         list
     }
