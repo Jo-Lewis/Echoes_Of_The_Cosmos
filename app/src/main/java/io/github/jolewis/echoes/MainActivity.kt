@@ -76,7 +76,7 @@ fun EchoesApp(activity: ComponentActivity) {
     var posMs by remember { mutableStateOf(0L) }
     var sleepUntil by remember { mutableStateOf(0L) }
     var sleepMin by remember { mutableStateOf(0) }
-    var libQuery by remember { mutableStateOf("") }
+    var libQuery by remember { mutableStateOf(activity.intent?.getStringExtra("libq") ?: "") }
     var detail by remember { mutableStateOf<Episode?>(null) }
     var minePage by remember { mutableStateOf<String?>(null) }
     // 支持 am start --es q ... 直接进入点播（也方便以后做分享/快捷方式）
@@ -130,6 +130,7 @@ fun EchoesApp(activity: ComponentActivity) {
     }
 
     LaunchedEffect(Unit) {
+        if (!activity.intent?.getStringExtra("libq").isNullOrBlank()) tab = 1
         val cached = withContext(Dispatchers.IO) { Library.loadCached(activity) }
         episodes = cached
         recs = withContext(Dispatchers.IO) { ListenLog.load(activity) }

@@ -56,11 +56,14 @@ fun LibraryScreen(
         }
         if (year != "全部") list = list.filter { it.date.startsWith(year) }
         if (type != "全部") list = list.filter { it.contentType == type }
-        when (sort) {
-            "最长" -> list.sortedByDescending { it.durationSec }
-            "最短" -> list.sortedBy { it.durationSec }
-            else -> list.sortedByDescending { it.date }
+        // 搜索时默认保持相关度顺序；只有用户明确选了「最长/最短」才重排
+        when {
+            sort == "最长" -> list = list.sortedByDescending { it.durationSec }
+            sort == "最短" -> list = list.sortedBy { it.durationSec }
+            q.isNotBlank() -> Unit
+            else -> list = list.sortedByDescending { it.date }
         }
+        list
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
@@ -111,7 +114,11 @@ fun LibraryScreen(
 
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("${shown.size} 条", color = Tokens.Muted, fontSize = 11.sp)
+            Text(
+                if (q.isNotBlank() && sort == "最新") "${shown.size} 条 · 按相关度排序"
+                else "${shown.size} 条",
+                color = Tokens.Muted, fontSize = 11.sp
+            )
         }
         LazyColumn(Modifier.weight(1f)) {
             items(shown.take(500), key = { it.dir.absolutePath }) { ep ->

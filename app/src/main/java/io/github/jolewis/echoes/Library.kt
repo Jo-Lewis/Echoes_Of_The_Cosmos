@@ -7,6 +7,10 @@ import java.io.File
 /** 一张配图 + 图注（图注来自源文件名）。 */
 data class Pic(val file: File, val caption: String)
 
+/** 归一化：去掉标点、空白、全角符号并转小写，检索两边都用它。 */
+fun normText(s: String): String =
+    s.lowercase().replace(Regex("[\\s　,，。、；;：:！!？?（）()\\[\\]【】《》〈〉<>\"'“”‘’—\\-–·~～…]+"), "")
+
 data class Episode(
     val id: String,
     val title: String,
@@ -42,6 +46,18 @@ data class Episode(
     val minutes: Int get() = (durationSec / 60).coerceAtLeast(1)
     val audio: File get() = audioFiles.first()
     val inCollection: Boolean get() = !collection.isNullOrBlank() && collSize > 1
+
+    /** 归一化后的标题：去掉标点、空格、全角符号，统一小写，用于检索比对。 */
+    val titleN: String by lazy { normText(title) }
+
+    /** 简介/关键词/主题拼起来的归一化文本。 */
+    val metaN: String by lazy {
+        normText(
+            oneLine + " " + summary + " " + keywords.joinToString(" ") + " " +
+                topics.joinToString(" ") + " " + domain.joinToString(" ") + " " +
+                contentType + " " + tone + " " + bestFor
+        )
+    }
 
     val haystack: String by lazy {
         "$title ${topics.joinToString(" ")} ${keywords.joinToString(" ")} $oneLine"
@@ -273,18 +289,53 @@ object Library {
         )
     }
 
-    /** 本地关键词检索：bigram 重叠 + 标题加权。离线也能用。 */
+    /** 本地检索：分层计分，标题命中优先，其次关键词/简介，最后二元组兜底。 */
     fun search(list: List<Episode>, q: String): List<Episode> {
-        val key = q.trim()
-        if (key.isEmpty()) return list
-        val grams = key.windowed(2).filter { it.isNotBlank() }.toSet()
-        return list.map { e ->
+        val nq = normText(q)
+        if (nq.isEmpty()) return list
+        // 空格分词：多词时要求每个词都出现在标题里才给高分
+        val terms = q.split(Regex("\\s+")).map { normText(it) }.filter { it.isNotEmpty() }
+        val grams = nq.windowed(2).filter { it.isNotBlank() }.toSet()
+
+        val scored = ArrayList<Pair<Episode, Double>>(64)
+        for (e in list) {
+            val t = e.titleN
             var s = 0.0
-            grams.forEach { g ->
-                if (e.title.contains(g)) s += 3.0
-                else if (e.haystack.contains(g)) s += 1.0
+            when {
+                t == nq -> s += 10000.0
+                t.startsWith(nq) -> s += 6000.0
+                t.contains(nq) -> s += 4000.0
+                else -> {
+                    if (terms.size > 1 && terms.all { t.contains(it) }) s += 3000.0
+                }
             }
-            e to s
-        }.filter { it.second > 0 }.sortedByDescending { it.second }.map { it.first }
+            // 标题里命中的词比例，用于同层级内排序
+            if (s > 0 && terms.isNotEmpty()) {
+                s += 200.0 * terms.count { t.contains(it) } / terms.size
+            }
+            // 关键词 / 简介 / 主题
+            if (e.metaN.contains(nq)) s += 600.0
+            if (s < 4000.0) {
+                var hits = 0
+                for (term in terms) if (term.length >= 2 && e.metaN.contains(term)) hits++
+                s += 120.0 * hits
+                // 主题词、关键词精确命中额外加一点
+                if (e.keywords.any { normText(it) == nq } || e.topics.any { normText(it) == nq }) s += 400.0
+            }
+            // 兜底：标题二元组重叠（输入有错字/只记得片段时还能搜到）
+            if (s == 0.0 && grams.isNotEmpty()) {
+                var g = 0
+                for (x in grams) if (e.titleN.contains(x)) g++
+                s = 30.0 * g / grams.size
+            }
+            if (s > 0) scored.add(e to s)
+        }
+        val out = scored.sortedWith(
+            compareByDescending<Pair<Episode, Double>> { it.second }
+                .thenBy { it.first.title.length }
+                .thenByDescending { it.first.date }
+        ).map { it.first }
+        return out
     }
+
 }
