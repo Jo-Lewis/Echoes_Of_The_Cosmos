@@ -96,7 +96,7 @@ def cmd_build(args):
         try:
             st = build.build_article(art, args.out,
                                      mode=args.mode, overwrite=args.overwrite,
-                                     make_thumb=not args.no_thumb)
+                                     make_thumb=args.thumb)
             dt = time.time() - t1
             t_sum += dt
             if st.get("skipped"):
@@ -451,7 +451,7 @@ def main():
     b.add_argument("--limit", type=int, default=100)
     b.add_argument("--mode", default="link", choices=["link", "transcode"])
     b.add_argument("--overwrite", action="store_true")
-    b.add_argument("--no-thumb", action="store_true")
+    b.add_argument("--thumb", action="store_true", help="生成波形缩略图（App 不用，默认关闭）")
     b.add_argument("--seed", type=int, default=0)
     b.add_argument("--shard", default="", help="i/n，只处理第 i 份（共 n 份）")
     b.set_defaults(func=cmd_build)

@@ -129,6 +129,16 @@ fun EchoesApp(activity: ComponentActivity) {
         activity.contentResolver.unregisterContentObserver(obs)
     }
 
+    // 媒体库目录放一个 .nomedia：否则 2 万多张封面/配图会被系统相册收录
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val root = Library.root(activity)
+                if (root.isDirectory) File(root, ".nomedia").takeIf { !it.exists() }?.createNewFile()
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (!activity.intent?.getStringExtra("libq").isNullOrBlank()) tab = 1
         val t0 = android.os.SystemClock.elapsedRealtime()
@@ -153,6 +163,23 @@ fun EchoesApp(activity: ComponentActivity) {
             episodes = fresh
             LibraryCache.mem = fresh
             withContext(Dispatchers.IO) { runCatching { Library.saveCache(activity, fresh) } }
+        }
+    }
+
+    // 预热检索字段（标题/简介/关键词的归一化文本），首次搜索就不用现算了
+    LaunchedEffect(episodes) {
+        if (episodes.isEmpty()) return@LaunchedEffect
+        withContext(Dispatchers.Default) {
+            val t0 = android.os.SystemClock.elapsedRealtime()
+            episodes.forEach { e ->
+                e.titleN; e.metaN; e.keyN
+            }
+            if (BuildConfig.DEBUG) {
+                android.util.Log.d(
+                    "echoes",
+                    "perf warmup=" + (android.os.SystemClock.elapsedRealtime() - t0) + "ms"
+                )
+            }
         }
     }
 

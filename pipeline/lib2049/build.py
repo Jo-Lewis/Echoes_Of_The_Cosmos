@@ -206,7 +206,7 @@ def _analyze_part(part):
     return info, ana
 
 
-def build_article(art, out_root, mode="link", overwrite=False, make_thumb=True):
+def build_article(art, out_root, mode="link", overwrite=False, make_thumb=False):
     """把一个 Article 写进库。返回 dict 统计。"""
     if not art.parts:
         return {"id": art.id, "skipped": "no_audio"}
@@ -321,7 +321,7 @@ def build_article(art, out_root, mode="link", overwrite=False, make_thumb=True):
         "assets": {
             "audio": None if multi else ("audio" + os.path.splitext(art.parts[0].path)[1].lower()),
             "cover": "cover.jpg",
-            "thumb": None if multi else "thumb.jpg",
+            "thumb": None,
             "transcript": "transcript.md" if paragraphs else None,
             "blocks": "blocks.json" if paragraphs else None,
             "parts_dir": "parts" if multi else None,

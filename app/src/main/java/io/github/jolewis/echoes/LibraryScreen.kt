@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,6 +33,14 @@ fun LibraryScreen(
     onOpenCollections: () -> Unit = {},
 ) {
     var q by remember(query) { mutableStateOf(query) }
+    // 输入防抖：停手 150ms 再真正过滤，避免每个字都跑一遍全库
+    var qDeb by remember { mutableStateOf(query) }
+    LaunchedEffect(q) {
+        if (q != qDeb) {
+            kotlinx.coroutines.delay(150)
+            qDeb = q
+        }
+    }
     var scope by remember { mutableStateOf("全部") }
     var sort by remember { mutableStateOf("最新") }
     var year by remember { mutableStateOf("全部") }
@@ -47,9 +56,9 @@ fun LibraryScreen(
             .groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
     }
 
-    val shown = remember(q, scope, sort, year, type, episodes, listened) {
+    val shown = remember(qDeb, scope, sort, year, type, episodes, listened) {
         val tf = android.os.SystemClock.elapsedRealtime()
-        var list = if (q.isBlank()) episodes else Library.search(episodes, q)
+        var list = if (qDeb.isBlank()) episodes else Library.search(episodes, qDeb)
         when (scope) {
             "未听" -> list = list.filter { it.id !in listened }
             "已听" -> list = list.filter { it.id in listened }
@@ -61,14 +70,14 @@ fun LibraryScreen(
         when {
             sort == "最长" -> list = list.sortedByDescending { it.durationSec }
             sort == "最短" -> list = list.sortedBy { it.durationSec }
-            q.isNotBlank() -> Unit
+            qDeb.isNotBlank() -> Unit
             else -> list = list.sortedByDescending { it.date }
         }
         if (BuildConfig.DEBUG) {
             android.util.Log.d(
                 "echoes",
                 "perf libraryCompose filter=" + (android.os.SystemClock.elapsedRealtime() - tf) +
-                    "ms q=" + q + " shown=" + list.size
+                    "ms q=" + qDeb + " shown=" + list.size
             )
         }
         list

@@ -50,6 +50,11 @@ data class Episode(
     /** 归一化后的标题：去掉标点、空格、全角符号，统一小写，用于检索比对。 */
     val titleN: String by lazy { normText(title) }
 
+    /** 归一化后的关键词/主题词集合，供检索快速比对（只算一次）。 */
+    val keyN: Set<String> by lazy {
+        (keywords + topics).map { normText(it) }.filter { it.isNotBlank() }.toSet()
+    }
+
     /** 简介/关键词/主题拼起来的归一化文本。 */
     val metaN: String by lazy {
         normText(
@@ -320,7 +325,7 @@ object Library {
                 for (term in terms) if (term.length >= 2 && e.metaN.contains(term)) hits++
                 s += 120.0 * hits
                 // 主题词、关键词精确命中额外加一点
-                if (e.keywords.any { normText(it) == nq } || e.topics.any { normText(it) == nq }) s += 400.0
+                if (nq in e.keyN) s += 400.0
             }
             // 兜底：标题二元组重叠（输入有错字/只记得片段时还能搜到）
             if (s == 0.0 && grams.isNotEmpty()) {
